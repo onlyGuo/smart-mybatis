@@ -1,0 +1,66 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>ink.icoding</groupId>
+  <artifactId>smart-mybatis</artifactId>
+  <version>${project.version}</version>
+  <packaging>pom</packaging>
+
+  <name>smart-mybatis</name>
+  <description>Smart MyBatis is a powerful MyBatis extension that simplifies database operations and enhances productivity.</description>
+  <url>https://smart-mybatis.icoding.ink</url>
+
+  <modules>
+    <module>core</module>
+    <module>spring-boot-starter-smart-mybatis</module>
+    <module>spring-boot-starter-smart-mybatis-example</module>
+  </modules>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.version>1.0.0</project.version>
+    <spring.boot.version>3.5.7</spring.boot.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring.boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>ink.icoding.smart-mybatis</groupId>
+        <artifactId>core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>ink.icoding</groupId>
+        <artifactId>spring-boot-starter-smart-mybatis</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>ink.icoding</groupId>
+        <artifactId>spring-boot-starter-smart-mybatis-example</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgs>
+            <arg>-parameters</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

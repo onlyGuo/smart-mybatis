@@ -1,0 +1,4 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+  ink.icoding.springboot.smartmybatis.config.SmartMybatisAutoConfiguration
+org.springframework.context.ApplicationContextInitializer=\
+ink.icoding.springboot.smartmybatis.config.SmartMybatisInitializer

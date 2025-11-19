@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: spring-boot-starter-smart-mybatis-example
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://g.ai:3306/smart_mybatis_example?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    username: db_test
+    password: db_test
+  mybatis:
+    smart:
+      naming-convention: underline_upper
+      table-prefix: sm_
+      auto-sync-db: true
