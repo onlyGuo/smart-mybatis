@@ -9,21 +9,33 @@
     </parent>
     <artifactId>spring-boot-starter-smart-mybatis</artifactId>
     <version>${project.version}</version>
+
     <name>spring-boot-starter-smart-mybatis</name>
-    <description>spring-boot-starter-smart-mybatis</description>
-    <url/>
+    <description>A flexible and lightweight MyBatis enhancement library</description>
+    <url>https://icoding.ink</url>
+
     <licenses>
-        <license/>
+        <license>
+            <name>GNU Affero General Public License v3.0</name>
+            <url>https://raw.githubusercontent.com/onlyGuo/easymybatis/master/LICENSE</url>
+            <distribution>repo</distribution>
+        </license>
     </licenses>
-    <developers>
-        <developer/>
-    </developers>
+
     <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
+        <url>https://icoding.ink/</url>
+        <connection>scm:https://github.com/onlyGuo/smart-mybatis.git</connection>
+        <developerConnection>scm:https://github.com/onlyGuo/smart-mybatis.git</developerConnection>
     </scm>
+
+    <developers>
+        <developer>
+            <name>guoshengkai</name>
+            <email>719348277@qq.com</email>
+            <url>https://icoding.ink</url>
+        </developer>
+    </developers>
+
     <properties>
         <java.version>17</java.version>
     </properties>
