@@ -5,10 +5,9 @@
     <parent>
         <groupId>ink.icoding</groupId>
         <artifactId>smart-mybatis</artifactId>
-        <version>1.0.1</version>
+        <version>1.0.2</version>
     </parent>
     <artifactId>spring-boot-starter-smart-mybatis-example</artifactId>
-    <version>${project.version}</version>
     <name>spring-boot-starter-smart-mybatis-example</name>
     <description>Spring Boot Example Project for Smart Mybatis</description>
     <url>https://icoding.ink</url>

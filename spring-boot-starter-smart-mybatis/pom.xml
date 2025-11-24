@@ -5,10 +5,9 @@
     <parent>
         <groupId>ink.icoding</groupId>
         <artifactId>smart-mybatis</artifactId>
-        <version>1.0.1</version>
+        <version>1.0.2</version>
     </parent>
     <artifactId>spring-boot-starter-smart-mybatis</artifactId>
-    <version>${project.version}</version>
 
     <name>spring-boot-starter-smart-mybatis</name>
     <description>A flexible and lightweight MyBatis enhancement library</description>
@@ -43,6 +42,7 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>ink.icoding.smart-mybatis</groupId>

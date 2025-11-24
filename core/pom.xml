@@ -4,13 +4,12 @@
     <parent>
         <groupId>ink.icoding</groupId>
         <artifactId>smart-mybatis</artifactId>
-        <version>1.0.1</version>
+        <version>1.0.2</version>
     </parent>
 
     <groupId>ink.icoding.smart-mybatis</groupId>
     <artifactId>core</artifactId>
     <packaging>jar</packaging>
-    <version>${project.version}</version>
 
     <name>core</name>
     <url>http://maven.apache.org</url>
