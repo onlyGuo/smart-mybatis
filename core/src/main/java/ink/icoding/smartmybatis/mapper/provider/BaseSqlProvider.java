@@ -70,6 +70,80 @@ public class BaseSqlProvider {
     }
 
     /**
+     * 批量插入记录 SQL 语句生成
+     * @param params
+     *      参数
+     * @param context
+     *      上下文
+     * @return SQL 语句
+     */
+    public String insertBatch(Map<String, Object> params, ProviderContext context) {
+        @SuppressWarnings("unchecked")
+        Collection<PO> records = (Collection<PO>) params.get("list");
+        if (records == null || records.isEmpty()) {
+            throw new IllegalArgumentException("The records collection for batch insert cannot be null or empty.");
+        }
+        Class<?> mapperType = context.getMapperType();
+        MapperDeclaration mapperDeclaration = MapperUtil.getMapperDeclaration(mapperType);
+
+        StringBuilder sql = new StringBuilder();
+        sql.append("INSERT INTO `").append(mapperDeclaration.getTableName()).append("` (");
+        List<ColumnDeclaration> columnDeclarations = mapperDeclaration.getColumnDeclarations();
+        // 添加列名
+        for (ColumnDeclaration columnDeclaration : columnDeclarations) {
+            sql.append("`").append(columnDeclaration.getColumnName()).append("`, ");
+        }
+        // 添加主键列名
+        sql.append("`").append(mapperDeclaration.getPkColumnName()).append("`) VALUES ");
+
+        int recordIndex = 0;
+        for (PO record : records) {
+            // 构建主键
+            if (mapperDeclaration.getPkGenerateType() != PrimaryGenerateType.AUTO){
+                switch (mapperDeclaration.getPkGenerateType()){
+                    case INPUT:
+                        // 如果主键是手动输入, 则插入主键字段
+                        Object pkValue = MapperUtil.getFieldValue(record, mapperDeclaration.getPkName());
+                        if (null == pkValue){
+                            throw new IllegalArgumentException(
+                                    "Primary key value must be provided for INPUT generate type, but it is null. at "
+                                            + mapperDeclaration.getPoClass().getName());
+                        }
+                    case UUID:
+                        MapperUtil.setFieldValue(record, mapperDeclaration.getPkName(),
+                                UUID.randomUUID().toString().replace("-", ""));
+                    case SNOWFLAKE:
+                        MapperUtil.setFieldValue(record, mapperDeclaration.getPkName(),
+                                String.valueOf(SnowflakeIdGeneratorUtil.getInstance().nextId()));
+                        break;
+                    case SNOWFLAKE_HEX:
+                        MapperUtil.setFieldValue(record, mapperDeclaration.getPkName(),
+                                Long.toHexString(SnowflakeIdGeneratorUtil.getInstance().nextId()));
+                        break;
+                    default:
+                        throw new IllegalArgumentException(
+                                "Unsupported primary key generate type: " + mapperDeclaration.getPkGenerateType()
+                                        + " at " + mapperDeclaration.getPoClass().getName());
+                }
+            }
+            sql.append("(");
+            // 添加列值
+            for (ColumnDeclaration columnDeclaration : columnDeclarations) {
+                sql.append("#{list[").append(recordIndex).append("].")
+                        .append(columnDeclaration.getFieldName()).append("}, ");
+            }
+            // 添加主键列值
+            sql.append("#{list[").append(recordIndex).append("].")
+                    .append(mapperDeclaration.getPkName()).append("})");
+            recordIndex++;
+            if (recordIndex < records.size()) {
+                sql.append(", ");
+            }
+        }
+        return sql.toString();
+    }
+
+    /**
      * 根据 Where 条件生成查询 SQL 语句
      * @param where
      *      查询条件
@@ -126,6 +200,87 @@ public class BaseSqlProvider {
     public String executeSql(Map<String, Object> params, ProviderContext context) {
         return params.get("sql").toString();
     }
+
+    /**
+     * 根据主键生成删除 SQL 语句
+     * @param id
+     *      主键
+     * @return SQL 语句
+     */
+    public String deleteById(Serializable id, ProviderContext context) {
+        Class<?> mapperType = context.getMapperType();
+        MapperDeclaration declaration = MapperUtil.getMapperDeclaration(mapperType);
+        return "DELETE FROM `" +
+                declaration.getTableName() + "` WHERE `" +
+                declaration.getPkColumnName() + "` = #{id}";
+    }
+
+    /**
+     * 根据主键集合生成批量删除 SQL 语句
+     * @param ids
+     *      主键集合
+     * @return SQL 语句
+     */
+    public String deleteByIds(Collection<Serializable> ids, ProviderContext context) {
+        Class<?> mapperType = context.getMapperType();
+        MapperDeclaration declaration = MapperUtil.getMapperDeclaration(mapperType);
+        StringBuilder sql = new StringBuilder("DELETE FROM `")
+                .append(declaration.getTableName())
+                .append("` WHERE `")
+                .append(declaration.getPkColumnName())
+                .append("` IN (");
+        for (int i = 0; i < ids.size(); i++) {
+            sql.append("#{ids[").append(i).append("]}");
+            if (i < ids.size() - 1) {
+                sql.append(", ");
+            }
+        }
+        sql.append(")");
+        return sql.toString();
+    }
+
+    /**
+     * 根据 Where 条件生成删除 SQL 语句
+     * @param where
+     *      删除条件
+     * @return SQL 语句
+     */
+    public String deleteByWhere(Where where, ProviderContext context) {
+        Class<?> mapperType = context.getMapperType();
+        MapperDeclaration declaration = MapperUtil.getMapperDeclaration(mapperType);
+        StringBuilder sql = new StringBuilder("DELETE FROM `")
+                .append(declaration.getTableName()).append("`");
+        sql.append(buildWherePart(where));
+        return sql.toString();
+    }
+
+    /**
+     * 根据主键生成更新 SQL 语句
+     * @param params
+     *      参数
+     * @return SQL 语句
+     */
+    public String updateById(Map<String, Object> params, ProviderContext context) {
+        PO record = (PO) params.get("record");
+        Class<?> mapperType = context.getMapperType();
+        MapperDeclaration mapperDeclaration = MapperUtil.getMapperDeclaration(mapperType);
+        StringBuilder sql = new StringBuilder("UPDATE `")
+                .append(mapperDeclaration.getTableName())
+                .append("` SET ");
+        List<ColumnDeclaration> columnDeclarations = mapperDeclaration.getColumnDeclarations();
+        for (int i = 0; i < columnDeclarations.size(); i++) {
+            ColumnDeclaration columnDeclaration = columnDeclarations.get(i);
+            sql.append("`").append(columnDeclaration.getColumnName()).append("` = #{record.")
+                    .append(columnDeclaration.getFieldName()).append("}");
+            if (i < columnDeclarations.size() - 1) {
+                sql.append(", ");
+            }
+        }
+        sql.append(" WHERE `").append(mapperDeclaration.getPkColumnName())
+                .append("` = #{record.").append(mapperDeclaration.getPkName()).append("}");
+        return sql.toString();
+    }
+
 
     /**
      * 构建 Where 部分 SQL 语句

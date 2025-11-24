@@ -1,7 +1,10 @@
 package ink.icoding.smartmybatis.example.service.impl;
 
 import ink.icoding.smartmybatis.entity.expression.C;
+import ink.icoding.smartmybatis.entity.expression.ComparisonExpression;
+import ink.icoding.smartmybatis.entity.expression.Link;
 import ink.icoding.smartmybatis.entity.expression.Where;
+import ink.icoding.smartmybatis.entity.po.PO;
 import ink.icoding.smartmybatis.example.entity.Student;
 import ink.icoding.smartmybatis.example.enums.Sex;
 import ink.icoding.smartmybatis.example.mapper.StudentMapper;
@@ -25,18 +28,12 @@ public class StudentServiceImpl implements StudentService {
 
     @Override
     public List<Student> searchStudent(String name, Integer minAge, Integer maxAge, Sex sex) {
-//        return studentMapper.select(Where.where()
-//                .and(Student::getName, C.LIKE, name)
-//                .and(Student::getAge, C.GTE, minAge)
-//                .and(Student::getAge, C.LTE, maxAge)
-//                .and(Student::getSex, C.EQ, sex)
-//        );
-        System.out.println(studentMapper.count());
         return studentMapper.select(Where.where()
-                .and(Student::getName).like(name)
-                .and(Student::getAge).greaterThan(minAge)
-                .and(Student::getAge).lessThan(maxAge)
-                .and(Student::getSex).equalsFor(sex));
+                .ifAnd(Student::getName).like(name)
+                .ifAnd(Student::getAge).greaterThanOrEquals(minAge)
+                .ifAnd(Student::getAge).lessThanOrEquals(maxAge)
+                .ifAnd(Student::getSex).equalsFor(sex)
+        );
     }
 
     @Override
