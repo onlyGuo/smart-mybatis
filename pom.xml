@@ -4,7 +4,7 @@
 
   <groupId>ink.icoding</groupId>
   <artifactId>smart-mybatis</artifactId>
-  <version>1.0.2</version>
+  <version>1.0.3</version>
   <packaging>pom</packaging>
 
   <name>smart-mybatis</name>
