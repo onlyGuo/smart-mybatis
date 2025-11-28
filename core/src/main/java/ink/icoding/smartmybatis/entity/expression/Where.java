@@ -41,6 +41,27 @@ public class Where {
     }
 
     /**
+     * 直接创建比较表达式构建器
+     * @param func 属性函数
+     * @return 比较表达式构建器
+     */
+    public static  <T extends PO> ComparisonExpressionBuilder<T> where(SFunction<T, ?> func) {
+        Where where = new Where();
+        return new ComparisonExpressionBuilder<T>(func, where, Link.AND, false);
+    }
+
+    /**
+     * 直接创建比较表达式构建器(如果是空值则忽略)
+     * @param func 属性函数
+     * @return 比较表达式构建器
+     */
+    public static  <T extends PO> ComparisonExpressionBuilder<T> isWhere(SFunction<T, ?> func) {
+        Where where = new Where();
+        return new ComparisonExpressionBuilder<T>(func, where, Link.AND, true);
+    }
+
+
+    /**
      * 获取比较表达式列表
      * @return 比较表达式列表
      */

@@ -5,7 +5,7 @@
     <parent>
         <groupId>ink.icoding</groupId>
         <artifactId>smart-mybatis</artifactId>
-        <version>1.0.3</version>
+        <version>1.0.6</version>
     </parent>
     <artifactId>spring-boot-starter-smart-mybatis-example</artifactId>
     <name>spring-boot-starter-smart-mybatis-example</name>

@@ -3,11 +3,9 @@ package ink.icoding.smartmybatis.utils.entity;
 import ink.icoding.smartmybatis.entity.po.PO;
 import ink.icoding.smartmybatis.entity.po.enums.PrimaryGenerateType;
 import ink.icoding.smartmybatis.entity.po.enums.TableField;
-import ink.icoding.smartmybatis.utils.SnowflakeIdGeneratorUtil;
 
 import java.io.Serializable;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * Mapper 声明信息
@@ -114,7 +112,13 @@ public class MapperDeclaration {
                 valuesPart.append(", ");
             }
             sql.append("`").append(columnDeclaration.getColumnName()).append("`");
-            valuesPart.append("#{record.").append(columnDeclaration.getFieldName()).append("}");
+            if (columnDeclaration.isJson()){
+                valuesPart.append("#{record.").append(columnDeclaration.getFieldName())
+                        .append(", typeHandler=ink.icoding.smartmybatis.mapper.handlers.SmartJsonTypeHandler}");
+            }else{
+                valuesPart.append("#{record.").append(columnDeclaration.getFieldName()).append("}");
+            }
+
             first = false;
         }
 

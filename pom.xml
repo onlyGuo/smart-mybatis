@@ -4,7 +4,7 @@
 
   <groupId>ink.icoding</groupId>
   <artifactId>smart-mybatis</artifactId>
-  <version>1.0.3</version>
+  <version>1.0.6</version>
   <packaging>pom</packaging>
 
   <name>smart-mybatis</name>
@@ -84,6 +84,7 @@
           <source>${maven.compiler.source}</source>
           <target>${maven.compiler.target}</target>
           <encoding>${project.build.sourceEncoding}</encoding>
+          <parameters>true</parameters>
           <annotationProcessorPaths>
             <path>
               <groupId>org.springframework.boot</groupId>

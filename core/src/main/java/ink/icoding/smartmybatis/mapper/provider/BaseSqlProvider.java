@@ -129,8 +129,14 @@ public class BaseSqlProvider {
             sql.append("(");
             // 添加列值
             for (ColumnDeclaration columnDeclaration : columnDeclarations) {
-                sql.append("#{list[").append(recordIndex).append("].")
-                        .append(columnDeclaration.getFieldName()).append("}, ");
+                if (columnDeclaration.isJson()){
+                    sql.append("#{list[").append(recordIndex).append("].")
+                            .append(columnDeclaration.getFieldName())
+                            .append(", typeHandler=ink.icoding.smartmybatis.mapper.handlers.SmartJsonTypeHandler}, ");
+                }else{
+                    sql.append("#{list[").append(recordIndex).append("].")
+                            .append(columnDeclaration.getFieldName()).append("}, ");
+                }
             }
             // 添加主键列值
             sql.append("#{list[").append(recordIndex).append("].")
@@ -270,8 +276,14 @@ public class BaseSqlProvider {
         List<ColumnDeclaration> columnDeclarations = mapperDeclaration.getColumnDeclarations();
         for (int i = 0; i < columnDeclarations.size(); i++) {
             ColumnDeclaration columnDeclaration = columnDeclarations.get(i);
-            sql.append("`").append(columnDeclaration.getColumnName()).append("` = #{record.")
-                    .append(columnDeclaration.getFieldName()).append("}");
+            if (columnDeclaration.isJson()){
+                sql.append("`").append(columnDeclaration.getColumnName()).append("` = #{record.")
+                        .append(columnDeclaration.getFieldName())
+                        .append(", typeHandler=ink.icoding.smartmybatis.mapper.handlers.SmartJsonTypeHandler}");
+            }else{
+                sql.append("`").append(columnDeclaration.getColumnName()).append("` = #{record.")
+                        .append(columnDeclaration.getFieldName()).append("}");
+            }
             if (i < columnDeclarations.size() - 1) {
                 sql.append(", ");
             }
