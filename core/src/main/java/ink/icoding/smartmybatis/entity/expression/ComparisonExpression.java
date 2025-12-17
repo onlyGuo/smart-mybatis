@@ -14,6 +14,13 @@ public class ComparisonExpression<T extends PO> implements Serializable {
     private Object value;
     private Link link;
 
+    /**
+     * 构造函数
+     * @param func 属性函数
+     * @param comparison 比较符(当比较符为 LIKE 时, 且value前后没有 %, 则会自动添加 %. 若已包含 %, 则不添加)
+     * @param value 比较值
+     * @param link 连接符
+     */
     public ComparisonExpression(SFunction<T, ?> func, C comparison, Object value, Link link) {
         this.func = func;
         this.comparison = comparison;

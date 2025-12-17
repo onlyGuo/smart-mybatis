@@ -25,7 +25,9 @@ public class MapperUtil {
     /**
      * Mapper 声明缓存
      */
-    private static final Map<Class<?>, MapperDeclaration> mapperDeclarationCache = new HashMap<>();
+    private static final Map<Class<?>, MapperDeclaration> MAPPER_DECLARATION_MAP = new HashMap<>();
+
+    private static final Map<String, ColumnDeclaration> FIELD_COLUMN_DECLARATION_MAP = new HashMap<>();
 
     /**
      * 获取 Mapper 声明的信息
@@ -33,8 +35,8 @@ public class MapperUtil {
      * @return Mapper 声明信息
      */
     public static MapperDeclaration getMapperDeclaration(Class<?> mapperType) {
-        if (mapperDeclarationCache.containsKey(mapperType)) {
-            return mapperDeclarationCache.get(mapperType);
+        if (MAPPER_DECLARATION_MAP.containsKey(mapperType)) {
+            return MAPPER_DECLARATION_MAP.get(mapperType);
         }
         MapperDeclaration declaration = new MapperDeclaration();
         Type[] genericInterfaces = mapperType.getGenericInterfaces();
@@ -84,9 +86,7 @@ public class MapperUtil {
                     }
                 }
             }else{
-                ColumnDeclaration columnDeclaration = new ColumnDeclaration();
-                columnDeclaration.setField(field);
-                applyFieldColumnName(columnDeclaration);
+                ColumnDeclaration columnDeclaration = getColumnDeclaration(field);
                 columnDeclarations.add(columnDeclaration);
             }
         }
@@ -95,7 +95,7 @@ public class MapperUtil {
         }
         applyTableName(declaration);
         declaration.setColumnDeclarations(columnDeclarations);
-        mapperDeclarationCache.put(mapperType, declaration);
+        MAPPER_DECLARATION_MAP.put(mapperType, declaration);
         return declaration;
     }
 
@@ -113,8 +113,8 @@ public class MapperUtil {
         }
         TableName tableName = poClass.getAnnotation(TableName.class);
         String name = null;
+        NamingConvention namingConvention = SmartConfigHolder.config().getNamingConvention();
         if (null == tableName){
-            NamingConvention namingConvention = SmartConfigHolder.config().getNamingConvention();
             if (namingConvention == NamingConvention.UNDERLINE_LOWER){
                 name = SmartConfigHolder.config().getTablePrefix().toLowerCase() + NamingUtil.camelToUnderlineLower(poClass.getSimpleName());
             } else if (namingConvention == NamingConvention.UNDERLINE_UPPER){
@@ -124,8 +124,32 @@ public class MapperUtil {
             } else{
                 throw new IllegalArgumentException("Unknown naming convention:" + namingConvention +", for PO class:" + poClass.getName());
             }
+        }else{
+            String prefix = SmartConfigHolder.config().getTablePrefix();
+            name = tableName.value();
+            if (namingConvention == NamingConvention.UNDERLINE_LOWER){
+                prefix = prefix.toLowerCase();
+                name = name.toLowerCase();
+            }else if (namingConvention == NamingConvention.UNDERLINE_UPPER){
+                prefix = prefix.toUpperCase();
+                name = name.toUpperCase();
+            }
+            if (!name.startsWith(prefix)){
+                name = prefix + name;
+            }
         }
         declaration.setTableName(name);
+    }
+
+    public static ColumnDeclaration getColumnDeclaration(Field field){
+        ColumnDeclaration columnDeclaration = FIELD_COLUMN_DECLARATION_MAP.get(field.getName());
+        if (null == columnDeclaration){
+            columnDeclaration = new ColumnDeclaration();
+            columnDeclaration.setField(field);
+            applyFieldColumnName(columnDeclaration);
+            FIELD_COLUMN_DECLARATION_MAP.put(field.getName(), columnDeclaration);
+        }
+        return columnDeclaration;
     }
 
     /**
@@ -313,7 +337,9 @@ public class MapperUtil {
      * 规范化类型字符串：忽略大小写与多余空白，便于比较
      */
     private static String normalizeType(String type) {
-        if (type == null) return "";
+        if (type == null) {
+            return "";
+        }
         return type.trim().replaceAll("\\s+", " ").toLowerCase();
     }
 

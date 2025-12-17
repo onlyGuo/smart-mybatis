@@ -1,5 +1,7 @@
 package ink.icoding.smartmybatis.mapper.base;
 
+import ink.icoding.smartmybatis.entity.Page;
+import ink.icoding.smartmybatis.entity.PageResult;
 import ink.icoding.smartmybatis.entity.SmartTreeNode;
 import ink.icoding.smartmybatis.entity.expression.SFunction;
 import ink.icoding.smartmybatis.entity.expression.Where;
@@ -125,6 +127,20 @@ public interface SmartMapper<T extends PO> {
             return list.get(0);
         }
         return null;
+    }
+
+    /**
+     * 根据条件分页查询记录
+     * @param where
+     *      查询条件
+     * @param page
+     *      分页信息
+     * @return 分页结果
+     */
+    default PageResult<T> selectPage(Where where, Page page){
+        long total = count(where);
+        List<T> list = select(where.limit((page.getPage() - 1) * page.getPageSize(), page.getPageSize()));
+        return new PageResult<>(list, total, page.getPage(), page.getPageSize());
     }
 
 

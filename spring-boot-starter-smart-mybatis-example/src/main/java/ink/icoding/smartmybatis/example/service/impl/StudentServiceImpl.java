@@ -50,6 +50,7 @@ public class StudentServiceImpl implements StudentService {
             student.setName(names[i]);
             student.setAge(18 + i);
             student.setSex(i % 2 == 0 ? Sex.MALE : Sex.FEMALE);
+            student.setHobbies(Arrays.asList("唱", "跳", "Rap", "篮球"));
             students.add(student);
         }
         int i1 = studentMapper.insertBatch(students);
@@ -64,6 +65,7 @@ public class StudentServiceImpl implements StudentService {
         newStudent.setName("测试用户");
         newStudent.setAge(20);
         newStudent.setSex(Sex.MALE);
+        newStudent.setHobbies(Arrays.asList("唱", "跳", "Rap", "篮球"));
         insertStudent(newStudent);
         System.out.println("Inserted new student: " + newStudent);
 

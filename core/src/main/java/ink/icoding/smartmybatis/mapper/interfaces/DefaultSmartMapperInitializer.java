@@ -5,9 +5,16 @@ import ink.icoding.smartmybatis.conf.GlobalConfig;
 import ink.icoding.smartmybatis.conf.SmartConfigHolder;
 import ink.icoding.smartmybatis.entity.po.PO;
 import ink.icoding.smartmybatis.mapper.base.SmartMapper;
+import ink.icoding.smartmybatis.mapper.handlers.SmartJsonTypeHandler;
 import ink.icoding.smartmybatis.utils.entity.ColumnDeclaration;
 import ink.icoding.smartmybatis.utils.entity.MapperDeclaration;
 import ink.icoding.smartmybatis.utils.entity.MapperUtil;
+import org.apache.ibatis.executor.keygen.Jdbc3KeyGenerator;
+import org.apache.ibatis.executor.keygen.KeyGenerator;
+import org.apache.ibatis.executor.keygen.NoKeyGenerator;
+import org.apache.ibatis.mapping.*;
+import org.apache.ibatis.session.Configuration;
+import org.apache.ibatis.session.SqlSessionFactory;
 import org.slf4j.Logger;
 import org.springframework.context.ApplicationContext;
 
@@ -20,6 +27,7 @@ import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 默认的 Smart Mapper 初始化器
@@ -44,37 +52,7 @@ public class DefaultSmartMapperInitializer implements SmartMapperInitializer {
         MapperDeclaration mapperDeclaration = MapperUtil.getMapperDeclaration(mapperInterface);
         if (config.isAutoSyncDb()){
             // 1) 同步数据库结构
-            logger.info("Starting to synchronize database structure for mapper: {}", mapperInterface.getName());
-            DataSource dataSource = applicationContext.getBean(DataSource.class);
-            try (Connection connection = dataSource.getConnection()){
-                DatabaseMetaData metaData = connection.getMetaData();
-                boolean hasTable = false;
-                try (ResultSet rs = metaData.getTables(null, null,
-                        mapperDeclaration.getTableName(), new String[]{"TABLE"})){
-                    hasTable = rs.next();
-                }
-                if (!hasTable) {
-                    MapperUtil.generateTable(smartMapper, mapperDeclaration);
-                }else{
-                    List<ColumnDeclaration> existingColumns = new ArrayList<>();
-                    try (ResultSet fieldRs = metaData.getColumns(null, null, mapperDeclaration.getTableName(), null);){
-                        while (fieldRs.next()) {
-                            String columnName = fieldRs.getString("COLUMN_NAME");
-                            String dataType = fieldRs.getString("TYPE_NAME");
-                            String comment = fieldRs.getString("REMARKS");
-                            ColumnDeclaration columnDeclaration = new ColumnDeclaration();
-                            columnDeclaration.setColumnName(columnName);
-                            columnDeclaration.setColumnType(dataType);
-                            columnDeclaration.setDescription(comment);
-                            existingColumns.add(columnDeclaration);
-                        }
-                    }
-                    MapperUtil.updateTable(smartMapper, mapperDeclaration, existingColumns);
-                }
-            } catch (SQLException e) {
-                throw new RuntimeException(e);
-            }
-            logger.info("Synchronized database structure for mapper: {}", mapperInterface.getName());
+            syncDatabaseStructure(smartMapper, mapperInterface, mapperDeclaration);
         }
 
         // 2) 反射 PATCH：为该 mapper 的 insert 方法以及 insertBatch 注入主键回填
@@ -84,100 +62,95 @@ public class DefaultSmartMapperInitializer implements SmartMapperInitializer {
             throw new RuntimeException("Patch generated keys for mapper "
                     + mapperInterface.getName() + " failed: " + ex.getMessage(), ex);
         }
+
+        // 3) 【新增】反射 PATCH：自动注入 JSON ResultMap
+        try {
+            patchResultMapForJsonFieldsReflective(mapperInterface, mapperDeclaration);
+        } catch (Throwable ex) {
+            throw new RuntimeException("Patch JSON ResultMap for mapper "
+                    + mapperInterface.getName() + " failed: " + ex.getMessage(), ex);
+        }
     }
 
     /**
-     * 通过反射为指定 mapper 的 INSERT MappedStatement 注入：
+     * 同步数据库结构
+     */
+    private <T extends PO> void syncDatabaseStructure(SmartMapper<T> smartMapper, Class<?> mapperInterface,
+                                                      MapperDeclaration mapperDeclaration) {
+        logger.info("Starting to synchronize database structure for mapper: {}", mapperInterface.getName());
+        DataSource dataSource = applicationContext.getBean(DataSource.class);
+        try (Connection connection = dataSource.getConnection()) {
+            DatabaseMetaData metaData = connection.getMetaData();
+            boolean hasTable = false;
+            try (ResultSet rs = metaData.getTables(null, null,
+                    mapperDeclaration.getTableName(), new String[]{"TABLE"})) {
+                hasTable = rs.next();
+            }
+            if (!hasTable) {
+                MapperUtil.generateTable(smartMapper, mapperDeclaration);
+            } else {
+                List<ColumnDeclaration> existingColumns = new ArrayList<>();
+                try (ResultSet fieldRs = metaData.getColumns(null, null, mapperDeclaration.getTableName(), null)) {
+                    while (fieldRs.next()) {
+                        String columnName = fieldRs.getString("COLUMN_NAME");
+                        String dataType = fieldRs.getString("TYPE_NAME");
+                        String comment = fieldRs.getString("REMARKS");
+                        ColumnDeclaration columnDeclaration = new ColumnDeclaration();
+                        columnDeclaration.setColumnName(columnName);
+                        columnDeclaration.setColumnType(dataType);
+                        columnDeclaration.setDescription(comment);
+                        existingColumns.add(columnDeclaration);
+                    }
+                }
+                MapperUtil.updateTable(smartMapper, mapperDeclaration, existingColumns);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+        logger.info("Synchronized database structure for mapper: {}", mapperInterface.getName());
+    }
+
+    /**
+     * 指定 mapper 的 INSERT MappedStatement 注入：
      * - Jdbc3KeyGenerator.INSTANCE
      * - keyProperty（兼容多种参数命名）
      * - 可选 keyColumn
      */
     private void patchGeneratedKeysForMapperReflective(Class<?> mapperInterface, MapperDeclaration mapperDeclaration) throws Exception {
         // 若环境未引入 MyBatis，直接跳过
-        Class<?> sqlSessionFactoryClass = forNameOrNull();
-        if (sqlSessionFactoryClass == null) {
+        if (forNameOrNull() == null) {
             logger.debug("MyBatis not present, skip generatedKeys patch.");
             return;
         }
 
-        Object sqlSessionFactory = getSpringBean(applicationContext, sqlSessionFactoryClass);
+        SqlSessionFactory sqlSessionFactory = (SqlSessionFactory) getSpringBean(applicationContext, SqlSessionFactory.class);
         if (sqlSessionFactory == null) {
             logger.debug("No SqlSessionFactory bean found, skip generatedKeys patch.");
             return;
         }
 
         // Configuration
-        Method getConfiguration = sqlSessionFactoryClass.getMethod("getConfiguration");
-        Object configuration = getConfiguration.invoke(sqlSessionFactory);
-        Class<?> configurationClass = configuration.getClass();
-
-
-
+        Configuration configuration = sqlSessionFactory.getConfiguration();
         // 获取所有 MappedStatement
-        Method getMappedStatements = configurationClass.getMethod("getMappedStatements");
-        Object mappedStatementsObj = getMappedStatements.invoke(configuration);
+        Collection<?> mappedStatements = configuration.getMappedStatements();
 
-        Iterable<Object> mappedStatements = toIterable(mappedStatementsObj);
         if (mappedStatements == null) {
             throw new IllegalStateException("Configuration.getMappedStatements() returned null or non-iterable");
         }
 
-        // 需要的类（反射）
-        Class<?> mappedStatementClass = forNameOrFail("org.apache.ibatis.mapping.MappedStatement");
-        Class<?> sqlCommandTypeClass = forNameOrFail("org.apache.ibatis.mapping.SqlCommandType");
-        Class<?> keyGeneratorInterface = forNameOrFail("org.apache.ibatis.executor.keygen.KeyGenerator");
-        Class<?> jdbc3KeyGeneratorClass = forNameOrFail("org.apache.ibatis.executor.keygen.Jdbc3KeyGenerator");
-        Class<?> noKeyGeneratorClass = forNameOrFail("org.apache.ibatis.executor.keygen.NoKeyGenerator");
-        Class<?> sqlSourceClass = forNameOrFail("org.apache.ibatis.mapping.SqlSource");
-        Class<?> builderClass = forNameOrFail("org.apache.ibatis.mapping.MappedStatement$Builder");
-        Class<?> statementTypeClass = forNameOrFail("org.apache.ibatis.mapping.StatementType");
-        Class<?> resultSetTypeClass = forNameOrFail("org.apache.ibatis.mapping.ResultSetType");
-        Class<?> parameterMapClass = forNameOrFail("org.apache.ibatis.mapping.ParameterMap");
-        Class<?> cacheClass = forNameOrFail("org.apache.ibatis.cache.Cache");
-        Class<?> languageDriverClass = forNameOrFail("org.apache.ibatis.scripting.LanguageDriver");
-
-        Object jdbc3KeyGenInstance = null;
-        try {
-            Field instanceField = jdbc3KeyGeneratorClass.getField("INSTANCE");
-            jdbc3KeyGenInstance = instanceField.get(null);
-        } catch (NoSuchFieldException ignore) {
-            // 退路：尝试默认构造
-            jdbc3KeyGenInstance = jdbc3KeyGeneratorClass.getDeclaredConstructor().newInstance();
-        }
-
-        // 反射访问 MappedStatement 常用 getter
-        Method msGetId = mappedStatementClass.getMethod("getId");
-        Method msGetSqlCommandType = mappedStatementClass.getMethod("getSqlCommandType");
-        Method msGetKeyGenerator = mappedStatementClass.getMethod("getKeyGenerator");
-        Method msGetKeyProperties = mappedStatementClass.getMethod("getKeyProperties");
-        Method msGetConfiguration = mappedStatementClass.getMethod("getConfiguration");
-        Method msGetSqlSource = mappedStatementClass.getMethod("getSqlSource");
-        Method msGetResource = mappedStatementClass.getMethod("getResource");
-        Method msGetFetchSize = mappedStatementClass.getMethod("getFetchSize");
-        Method msGetStatementType = mappedStatementClass.getMethod("getStatementType");
-        Method msGetDatabaseId = mappedStatementClass.getMethod("getDatabaseId");
-        Method msGetTimeout = mappedStatementClass.getMethod("getTimeout");
-        Method msGetParameterMap = mappedStatementClass.getMethod("getParameterMap");
-        Method msGetResultMaps = mappedStatementClass.getMethod("getResultMaps");
-        Method msGetResultSetType = mappedStatementClass.getMethod("getResultSetType");
-        Method msGetCache = mappedStatementClass.getMethod("getCache");
-        Method msIsFlushCacheRequired = mappedStatementClass.getMethod("isFlushCacheRequired");
-        Method msIsUseCache = mappedStatementClass.getMethod("isUseCache");
-        Method msGetLang = mappedStatementClass.getMethod("getLang");
-
         // 遍历并挑选 INSERT + 当前 mapper
-        List<Object> targets = new ArrayList<>();
-        for (Object ms : mappedStatements) {
-            if (!mappedStatementClass.isInstance(ms)) {
+        List<MappedStatement> targets = new ArrayList<>();
+        for (Object obj : mappedStatements) {
+            if (!(obj instanceof MappedStatement)) {
                 continue;
             }
-
-            String id = String.valueOf(msGetId.invoke(ms));
+            MappedStatement ms = (MappedStatement) obj;
+            String id = ms.getId();
             if (!id.startsWith(mapperInterface.getName() + ".")) {
                 continue;
             }
 
-            Object cmdType = msGetSqlCommandType.invoke(ms);
+            SqlCommandType cmdType = ms.getSqlCommandType();
             String cmdName = (String) cmdType.getClass().getMethod("name").invoke(cmdType);
             if (!"INSERT".equals(cmdName)) {
                 continue;
@@ -188,10 +161,9 @@ public class DefaultSmartMapperInitializer implements SmartMapperInitializer {
             if (!"insert".equals(methodName) && !"insertBatch".equals(methodName)) {
                 continue;
             }
-
-            Object keyGen = msGetKeyGenerator.invoke(ms);
-            boolean needKeyGenPatch = (keyGen == null) || noKeyGeneratorClass.isInstance(keyGen);
-            String[] keyProps = (String[]) msGetKeyProperties.invoke(ms);
+            KeyGenerator keyGen = ms.getKeyGenerator();
+            boolean needKeyGenPatch = (keyGen == null) || keyGen instanceof NoKeyGenerator;
+            String[] keyProps = ms.getKeyProperties();
             boolean hasKeyProps = keyProps != null && keyProps.length > 0;
 
             if (needKeyGenPatch && !hasKeyProps) {
@@ -205,46 +177,39 @@ public class DefaultSmartMapperInitializer implements SmartMapperInitializer {
         }
 
         // 构造新的 MappedStatement 并替换
-        for (Object ms : targets) {
-            Object cfg = msGetConfiguration.invoke(ms);
-            Object sqlSource = msGetSqlSource.invoke(ms);
-            String id = String.valueOf(msGetId.invoke(ms));
-            Object cmdType = msGetSqlCommandType.invoke(ms);
-
-            // 构造 Builder(configuration, id, sqlSource, sqlCommandType)
-            Constructor<?> builderCtor = builderClass.getConstructor(configurationClass, String.class, sqlSourceClass, sqlCommandTypeClass);
-            Object builder = builderCtor.newInstance(cfg, id, sqlSource, cmdType);
-
-            // 依次复制原属性
-            call(builderClass, builder, "resource", new Class[]{String.class}, new Object[]{msGetResource.invoke(ms)});
-            call(builderClass, builder, "fetchSize", new Class[]{Integer.class}, new Object[]{msGetFetchSize.invoke(ms)});
-            call(builderClass, builder, "statementType", new Class[]{statementTypeClass}, new Object[]{msGetStatementType.invoke(ms)});
-
+        for (MappedStatement ms : targets) {
+            String id = ms.getId();
             String pkProperty = mapperDeclaration.getPkName();
             String pkColumn = mapperDeclaration.getPkColumnName();
             String methodName = id.substring(id.lastIndexOf(".") + 1);
             String[] keyProperties = buildKeyPropertiesCandidates(pkProperty, methodName);
 
-            // 设置 keyGenerator / keyProperty / keyColumn
-            call(builderClass, builder, "keyGenerator", new Class[]{keyGeneratorInterface}, new Object[]{jdbc3KeyGenInstance});
-            call(builderClass, builder, "keyProperty", new Class[]{String.class}, new Object[]{String.join(",", keyProperties)});
-            if (pkColumn != null && !pkColumn.isEmpty()) {
-                call(builderClass, builder, "keyColumn", new Class[]{String.class}, new Object[]{pkColumn});
-            }
+            // 构造 Builder(configuration, id, sqlSource, sqlCommandType)
+            MappedStatement.Builder builder = new MappedStatement.Builder(
+                    ms.getConfiguration(), id, ms.getSqlSource(), ms.getSqlCommandType()
+            );
 
-            call(builderClass, builder, "databaseId", new Class[]{String.class}, new Object[]{msGetDatabaseId.invoke(ms)});
-            call(builderClass, builder, "timeout", new Class[]{Integer.class}, new Object[]{msGetTimeout.invoke(ms)});
-            call(builderClass, builder, "parameterMap", new Class[]{parameterMapClass}, new Object[]{msGetParameterMap.invoke(ms)});
-            call(builderClass, builder, "resultMaps", new Class[]{List.class}, new Object[]{msGetResultMaps.invoke(ms)});
-            call(builderClass, builder, "resultSetType", new Class[]{resultSetTypeClass}, new Object[]{msGetResultSetType.invoke(ms)});
-            call(builderClass, builder, "cache", new Class[]{cacheClass}, new Object[]{msGetCache.invoke(ms)});
-            call(builderClass, builder, "flushCacheRequired", new Class[]{boolean.class}, new Object[]{msIsFlushCacheRequired.invoke(ms)});
-            call(builderClass, builder, "useCache", new Class[]{boolean.class}, new Object[]{msIsUseCache.invoke(ms)});
-            call(builderClass, builder, "lang", new Class[]{languageDriverClass}, new Object[]{msGetLang.invoke(ms)});
+            // 设置 keyGenerator / keyProperty / keyColumn
+            builder.keyGenerator(Jdbc3KeyGenerator.INSTANCE).keyProperty(String.join(",", keyProperties));
+            if (pkColumn != null && !pkColumn.isEmpty()) {
+                builder.keyColumn(pkColumn);
+            }
+            // 依次复制原属性
+            builder.fetchSize(ms.getFetchSize())
+                    .statementType(ms.getStatementType())
+                    .parameterMap(ms.getParameterMap())
+                    .databaseId(ms.getDatabaseId())
+                    .timeout(ms.getTimeout())
+                    .parameterMap(ms.getParameterMap())
+                    .resultMaps(ms.getResultMaps())
+                    .resultSetType(ms.getResultSetType())
+                    .cache(ms.getCache())
+                    .flushCacheRequired(ms.isFlushCacheRequired())
+                    .useCache(ms.isUseCache())
+                    .lang(ms.getLang());
 
             // 构建新的 MappedStatement
-            Method build = builderClass.getMethod("build");
-            Object newMs = build.invoke(builder);
+            MappedStatement newMs = builder.build();
 
             // 替换 Configuration.mappedStatements
             replaceMappedStatementReflective(configuration, id, newMs);
@@ -269,6 +234,133 @@ public class DefaultSmartMapperInitializer implements SmartMapperInitializer {
             throw new IllegalStateException("Configuration.mappedStatements is not a Map");
         } catch (Exception e) {
             throw new IllegalStateException("Failed to replace MappedStatement: " + id, e);
+        }
+    }
+
+    /**
+     * 【核心修复】利用 MapperDeclaration 中的元数据，为 SELECT 方法注入包含 JSON Handler 的 ResultMap
+     */
+    private void patchResultMapForJsonFieldsReflective(Class<?> mapperInterface, MapperDeclaration declaration) throws Exception {
+        // 筛选出 JSON 字段
+        List<ColumnDeclaration> jsonColumns = declaration.getColumnDeclarations().stream()
+                .filter(ColumnDeclaration::isJson)
+                .collect(Collectors.toList());
+
+        if (jsonColumns.isEmpty()) {
+            return;
+        }
+
+        //  获取 MyBatis Configuration
+        if (forNameOrNull() == null) {
+            return;
+        }
+        SqlSessionFactory sqlSessionFactory = (SqlSessionFactory)getSpringBean(applicationContext, SqlSessionFactory.class);
+        if (sqlSessionFactory == null) {
+            return;
+        }
+
+        Configuration configuration = sqlSessionFactory.getConfiguration();
+
+        // 构建或获取通用的 JSON ResultMap
+        // ID 命名规则：实体类全名 + _AutoJsonMap
+        String autoJsonResultMapId = declaration.getPoClass().getName() + "_AutoJsonMap";
+        ResultMap sharedResultMap;
+
+        if (!configuration.hasResultMap(autoJsonResultMapId)) {
+            // 创建新的 ResultMappings
+            List<ResultMapping> mappings = new ArrayList<>();
+
+            for (ColumnDeclaration col : jsonColumns) {
+                if (col.getField() == null) {
+                    logger.warn("Skipping JSON mapping for column {} because Field is missing.", col.getColumnName());
+                    continue;
+                }
+                // 【重点】实例化 Handler，传入泛型类型，解决 List<POJO> 无法转换的问题
+                SmartJsonTypeHandler<?> handlerInstance = new SmartJsonTypeHandler<>(col.getField().getGenericType());
+
+//                ResultMapping mappingColumn = new ResultMapping.Builder(
+//                        configuration, col.getFieldName(), col.getColumnName(), handlerInstance
+//                ).build();
+//                mappings.add(mappingColumn);
+
+                ResultMapping mappingField = new ResultMapping.Builder(
+                        configuration, col.getFieldName(), col.getFieldName(), handlerInstance
+                ).build();
+                mappings.add(mappingField);
+            }
+
+            // 创建 ResultMap.Builder
+            // autoMapping = true 是关键，保证非 JSON 字段依然能自动映射
+            ResultMap.Builder resultMapBuilder = new ResultMap.Builder(
+                    configuration, autoJsonResultMapId, declaration.getPoClass(), mappings, true);
+
+
+            sharedResultMap = resultMapBuilder.build();
+
+            // 注册到 Configuration
+            configuration.addResultMap(sharedResultMap);
+            logger.debug("Created Auto-JSON ResultMap: {}", autoJsonResultMapId);
+        } else {
+            sharedResultMap = configuration.getResultMap(autoJsonResultMapId);
+        }
+
+        // 5. 遍历 MappedStatements 并替换 SELECT 的 ResultMap
+        Collection<?> mappedStatements = configuration.getMappedStatements();
+        if (mappedStatements == null) {
+            return;
+        }
+
+        for (Object obj : mappedStatements) {
+            if (!(obj instanceof MappedStatement)) {
+                continue;
+            }
+            MappedStatement ms = (MappedStatement) obj;
+            String id = ms.getId();
+
+            // 只处理当前 Mapper 接口下的方法
+            if (!id.startsWith(mapperInterface.getName() + ".")) {
+                continue;
+            }
+
+            // 只处理 SELECT 语句
+            SqlCommandType cmdType = ms.getSqlCommandType();
+            String cmdName = (String) cmdType.getClass().getMethod("name").invoke(cmdType);
+            if (!"SELECT".equals(cmdName)) {
+                continue;
+            }
+
+            // 检查当前的 ResultMap
+            List<ResultMap> currentResultMaps = ms.getResultMaps();
+            boolean shouldReplace = false;
+
+            if (currentResultMaps == null || currentResultMaps.isEmpty()) {
+                // 如果没有 ResultMap（通常不可能，除非是 void），则替换
+                shouldReplace = true;
+            } else {
+                ResultMap firstMap = currentResultMaps.get(0);
+                String mapId = firstMap.getId();
+                Class<?> type = firstMap.getType();
+
+                // 【修复逻辑】
+                // 1. 如果当前的 ResultMap 就是我们生成的那个，跳过（防止重复处理）
+                if (mapId.equals(autoJsonResultMapId)) {
+                    continue;
+                }
+
+                // 2. 只要 ResultMap 的返回类型是当前实体类，就进行替换
+                // 这样无论是 "-Inline" 还是 "BaseResultMap"，都能被覆盖并增强
+                if (declaration.getPoClass().isAssignableFrom(type)) {
+                    shouldReplace = true;
+                }
+            }
+
+            if (shouldReplace) {
+                // 替换为我们生成的包含 JSON Handler 的 ResultMap
+                Field resultMapsField = MappedStatement.class.getDeclaredField("resultMaps");
+                resultMapsField.setAccessible(true);
+                resultMapsField.set(ms, Collections.singletonList(sharedResultMap));
+                logger.debug("Injected JSON ResultMap into Statement: {}", id);
+            }
         }
     }
 

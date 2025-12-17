@@ -309,68 +309,95 @@ public class BaseSqlProvider {
         if ((null == expressions || expressions.isEmpty()) && limitSize == 0){
             return "";
         }
-        StringBuilder wherePart = new StringBuilder(" WHERE");
-        for (int i = 0; i < expressions.size(); i++) {
-            ComparisonExpression<?> expression = expressions.get(i);
-            Link link = expression.getLink();
-            if (null != link && i > 0) {
-                wherePart.append(" ").append(link.name()).append(" ");
-            }
-            SFunction<? extends PO, ?> func = expression.getFunc();
-            Field field = LambdaFieldUtil.getField(func);
-            C comparison = expression.getComparison();
-            Object value = expression.getValue();
-            ColumnDeclaration columnDeclaration = new ColumnDeclaration();
-            columnDeclaration.setField(field);
-            MapperUtil.applyFieldColumnName(columnDeclaration);
-            wherePart.append(" `").append(columnDeclaration.getColumnName()).append("` ");
-            if (null == value){
-                if (comparison == C.EQ || comparison == C.equals){
-                    wherePart.append("IS NULL ");
-                    continue;
-                } else if (comparison == C.NE || comparison == C.notEquals) {
-                    wherePart.append("IS NOT NULL ");
-                    continue;
-                } else {
-                    throw new IllegalArgumentException("Cannot use comparison " + comparison.name()
-                            + " with NULL value for field " + field.getName());
+        StringBuilder wherePart = new StringBuilder();
+        if (null != expressions && !expressions.isEmpty()){
+            wherePart.append(" WHERE");
+            for (int i = 0; i < expressions.size(); i++) {
+                ComparisonExpression<?> expression = expressions.get(i);
+                Link link = expression.getLink();
+                if (null != link && i > 0) {
+                    wherePart.append(" ").append(link.name()).append(" ");
                 }
-            }
-
-            wherePart.append(comparison.value()).append(" ");
-            if (comparison == C.IN || comparison == C.NOT_IN || comparison == C.in || comparison == C.notIn) {
-                wherePart.append(" (");
-                // 判断 value 是否为 数组, 如果是数组则转换成 List
-                if (value.getClass().isArray()) {
-                    value = Arrays.asList((Object[]) value);
-                }
-                if (!(value instanceof Collection)) {
-                    throw new IllegalArgumentException("Value for IN or NOT IN comparison must be a Collection or Array, but got: "
-                            + value.getClass().getName());
-                }
-                Collection<?> valueList = (Collection<?>) value;
-                for (int cl = 0; cl < valueList.size(); cl++) {
-                    wherePart.append("#{expressions[").append(i)
-                            .append("].value[").append(cl).append("]}");
-                    if (cl < valueList.size() - 1) {
-                        wherePart.append(", ");
+                SFunction<? extends PO, ?> func = expression.getFunc();
+                Field field = LambdaFieldUtil.getField(func);
+                C comparison = expression.getComparison();
+                Object value = expression.getValue();
+                ColumnDeclaration columnDeclaration = MapperUtil.getColumnDeclaration(field);
+                wherePart.append(" `").append(columnDeclaration.getColumnName()).append("` ");
+                if (null == value){
+                    if (comparison == C.EQ || comparison == C.equals){
+                        wherePart.append("IS NULL ");
+                        continue;
+                    } else if (comparison == C.NE || comparison == C.notEquals) {
+                        wherePart.append("IS NOT NULL ");
+                        continue;
+                    } else {
+                        throw new IllegalArgumentException("Cannot use comparison " + comparison.name()
+                                + " with NULL value for field " + field.getName());
                     }
                 }
-                wherePart.append(") ");
-            } else {
-                wherePart.append("#{expressions[").append(i).append("].value} ");
-                if (comparison == C.LIKE || comparison == C.NOT_LIKE ||
-                        comparison == C.like || comparison == C.notLike) {
-                    // 如果是模糊查询, 则在值前后添加 %
-                    String strValue = value.toString();
-                    if (!strValue.contains("%")) {
-                        strValue = "%" + strValue + "%";
-                        expression.setValue(strValue);
+
+                wherePart.append(comparison.value()).append(" ");
+                if (comparison == C.IN || comparison == C.NOT_IN || comparison == C.in || comparison == C.notIn) {
+                    wherePart.append(" (");
+                    // 判断 value 是否为 数组, 如果是数组则转换成 List
+                    if (value.getClass().isArray()) {
+                        value = Arrays.asList((Object[]) value);
+                    }
+                    if (!(value instanceof Collection)) {
+                        throw new IllegalArgumentException("Value for IN or NOT IN comparison must be a Collection or Array, but got: "
+                                + value.getClass().getName());
+                    }
+                    Collection<?> valueList = (Collection<?>) value;
+                    for (int cl = 0; cl < valueList.size(); cl++) {
+                        wherePart.append("#{expressions[").append(i)
+                                .append("].value[").append(cl).append("]}");
+                        if (cl < valueList.size() - 1) {
+                            wherePart.append(", ");
+                        }
+                    }
+                    wherePart.append(") ");
+                } else {
+                    wherePart.append("#{expressions[").append(i).append("].value} ");
+                    if (comparison == C.LIKE || comparison == C.NOT_LIKE ||
+                            comparison == C.like || comparison == C.notLike) {
+                        // 如果是模糊查询, 则在值前后添加 %
+                        String strValue = value.toString();
+                        if (!strValue.contains("%")) {
+                            strValue = "%" + strValue + "%";
+                            expression.setValue(strValue);
+                        }
                     }
                 }
             }
         }
-        return wherePart.toString();
+
+        StringBuilder orderByPart = new StringBuilder();
+        if (null != where.getSortExpressions() && !where.getSortExpressions().isEmpty()){
+            orderByPart.append(" ORDER BY ");
+            List<SortExpression<?>> sortExpressions = where.getSortExpressions();
+            for (int i = 0; i < sortExpressions.size(); i++) {
+                SortExpression<?> sortExpression = sortExpressions.get(i);
+                SFunction<? extends PO, ?> func = sortExpression.getFunc();
+                Field field = LambdaFieldUtil.getField(func);
+                ColumnDeclaration columnDeclaration = MapperUtil.getColumnDeclaration(field);
+                orderByPart.append("`").append(columnDeclaration.getColumnName()).append("` ")
+                        .append(sortExpression.getDirection().name());
+                if (i < sortExpressions.size() - 1) {
+                    orderByPart.append(", ");
+                }
+            }
+            wherePart.append(orderByPart);
+        }
+
+        StringBuilder limitPart = new StringBuilder();
+        if (limitSize > 0){
+            limitPart.append(" LIMIT ").append(where.getLimitStart()).append(", ").append(where.getLimitSize());
+        }
+
+
+
+        return wherePart.toString() + limitPart;
     }
 
     /**

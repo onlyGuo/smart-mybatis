@@ -14,6 +14,8 @@ public class Where {
 
     private List<ComparisonExpression<?>> expressions;
 
+    private List<SortExpression<?>> sortExpressions;
+
     private int limitSize;
 
     private int limitStart;
@@ -55,7 +57,7 @@ public class Where {
      * @param func 属性函数
      * @return 比较表达式构建器
      */
-    public static  <T extends PO> ComparisonExpressionBuilder<T> isWhere(SFunction<T, ?> func) {
+    public static  <T extends PO> ComparisonExpressionBuilder<T> ifWhere(SFunction<T, ?> func) {
         Where where = new Where();
         return new ComparisonExpressionBuilder<T>(func, where, Link.AND, true);
     }
@@ -202,6 +204,51 @@ public class Where {
 
     public int getLimitStart() {
         return limitStart;
+    }
+
+    /**
+     * 添加排序表达式
+     * @param func 属性函数
+     * @param direction 排序方向
+     * @return 当前 Where 对象
+     */
+    public <T extends PO> Where orderBy(SFunction<T, ?> func, SortDirection direction) {
+        if (null == sortExpressions){
+            sortExpressions = new LinkedList<>();
+        }
+        sortExpressions.add(new SortExpression<>(func, direction));
+        return this;
+    }
+
+    /**
+     * 重置排序表达式
+     * @param func 属性函数
+     * @param direction 排序方向
+     * @return 当前 Where 对象
+     */
+    public <T extends PO> Where resetOrderBy(SFunction<T, ?> func, SortDirection direction) {
+        sortExpressions = new LinkedList<>();
+        sortExpressions.add(new SortExpression<>(func, direction));
+        return this;
+    }
+
+    /**
+     * 添加排序表达式构建器, 默认正序
+     * @param func 属性函数
+     * @return 排序表达式构建器
+     */
+    public <T extends PO> SortExpressionBuilder<T> orderBy(SFunction<T, ?> func) {
+        SortExpression<T> tSortExpression = new SortExpression<>(func, SortDirection.ASC);
+        if (null == sortExpressions){
+            sortExpressions = new LinkedList<>();
+        }
+        sortExpressions.add(tSortExpression);
+        return new SortExpressionBuilder<>(this, tSortExpression);
+    }
+
+
+    public List<SortExpression<?>> getSortExpressions() {
+        return sortExpressions;
     }
 
 }
