@@ -3,6 +3,7 @@ package ink.icoding.smartmybatis.example.service.impl;
 import ink.icoding.smartmybatis.entity.expression.Where;
 import ink.icoding.smartmybatis.example.entity.Student;
 import ink.icoding.smartmybatis.example.enums.Sex;
+import ink.icoding.smartmybatis.example.mapper.ChinaCitiesMapper;
 import ink.icoding.smartmybatis.example.mapper.StudentMapper;
 import ink.icoding.smartmybatis.example.service.StudentService;
 import jakarta.annotation.PostConstruct;
@@ -23,6 +24,9 @@ public class StudentServiceImpl implements StudentService {
 
     @Resource
     private StudentMapper studentMapper;
+
+    @Resource
+    private ChinaCitiesMapper chinaCitiesMapper;
 
     @Override
     public List<Student> searchStudent(String name, Integer minAge, Integer maxAge, Sex sex) {
@@ -135,5 +139,8 @@ public class StudentServiceImpl implements StudentService {
 
         // Clear test data
         studentMapper.executeSql("TRUNCATE TABLE SM_STUDENT");
+
+        // test init china cities data
+        System.out.println(chinaCitiesMapper.selectAll());
     }
 }

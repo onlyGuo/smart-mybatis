@@ -9,6 +9,7 @@ import ink.icoding.smartmybatis.entity.po.enums.TableField;
 import ink.icoding.smartmybatis.entity.po.enums.TableName;
 import ink.icoding.smartmybatis.mapper.base.SmartMapper;
 import ink.icoding.smartmybatis.utils.NamingUtil;
+import org.springframework.util.StringUtils;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
@@ -51,6 +52,10 @@ public class MapperUtil {
                         Class<?> argClass = (Class<?>) arg;
                         if (PO.class.isAssignableFrom(argClass)) {
                             declaration.setPoClass((Class<? extends PO>) argClass);
+                            TableName annotation = argClass.getAnnotation(TableName.class);
+                            if (null != annotation && annotation.init() != null && !annotation.init().isEmpty()){
+                                declaration.setInitScriptResourcePath(annotation.init());
+                            }
                             break;
                         }
                     }
@@ -114,7 +119,7 @@ public class MapperUtil {
         TableName tableName = poClass.getAnnotation(TableName.class);
         String name = null;
         NamingConvention namingConvention = SmartConfigHolder.config().getNamingConvention();
-        if (null == tableName){
+        if (null == tableName || !StringUtils.hasText(tableName.value())){
             if (namingConvention == NamingConvention.UNDERLINE_LOWER){
                 name = SmartConfigHolder.config().getTablePrefix().toLowerCase() + NamingUtil.camelToUnderlineLower(poClass.getSimpleName());
             } else if (namingConvention == NamingConvention.UNDERLINE_UPPER){

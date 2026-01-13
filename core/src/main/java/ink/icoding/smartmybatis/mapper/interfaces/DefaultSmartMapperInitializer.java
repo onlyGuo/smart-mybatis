@@ -9,6 +9,7 @@ import ink.icoding.smartmybatis.mapper.handlers.SmartJsonTypeHandler;
 import ink.icoding.smartmybatis.utils.entity.ColumnDeclaration;
 import ink.icoding.smartmybatis.utils.entity.MapperDeclaration;
 import ink.icoding.smartmybatis.utils.entity.MapperUtil;
+import ink.icoding.smartmybatis.utils.file.FileUtil;
 import org.apache.ibatis.executor.keygen.Jdbc3KeyGenerator;
 import org.apache.ibatis.executor.keygen.KeyGenerator;
 import org.apache.ibatis.executor.keygen.NoKeyGenerator;
@@ -22,6 +23,7 @@ import javax.sql.DataSource;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
@@ -69,6 +71,38 @@ public class DefaultSmartMapperInitializer implements SmartMapperInitializer {
         } catch (Throwable ex) {
             throw new RuntimeException("Patch JSON ResultMap for mapper "
                     + mapperInterface.getName() + " failed: " + ex.getMessage(), ex);
+        }
+
+        // 4) 初始化脚本(如果有, 且表为空)
+        String initScriptResourcePath = mapperDeclaration.getInitScriptResourcePath();
+        if (initScriptResourcePath != null && !initScriptResourcePath.isEmpty()) {
+            executeInitScriptIfTableEmpty(smartMapper, mapperDeclaration, initScriptResourcePath);
+        }
+    }
+
+    /**
+     * 如果表为空，则执行初始化脚本
+     */
+    private <T extends PO> void executeInitScriptIfTableEmpty(SmartMapper<T> smartMapper,
+                                                              MapperDeclaration mapperDeclaration,
+                                                              String initScriptResourcePath) {
+        // 先检查初始化脚本是否存在
+        if (!FileUtil.existsResource(initScriptResourcePath)){
+            logger.warn("Initialization script resource not found: {}", initScriptResourcePath);
+            return;
+        }
+        String script = new String(FileUtil.readResource(initScriptResourcePath), StandardCharsets.UTF_8);
+        if (script.trim().isEmpty()){
+            logger.warn("Initialization script is empty: {}", initScriptResourcePath);
+            return;
+        }
+        // 检查表是否为空
+        long count = smartMapper.count();
+        if (count == 0){
+            logger.info("Table {} is empty, executing initialization script: {}",
+                    mapperDeclaration.getTableName(), initScriptResourcePath);
+            smartMapper.executeSqlScript(script);
+            logger.info("Initialization script executed for table {}", mapperDeclaration.getTableName());
         }
     }
 

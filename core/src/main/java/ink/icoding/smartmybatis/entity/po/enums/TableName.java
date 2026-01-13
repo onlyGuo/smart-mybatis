@@ -23,4 +23,9 @@ public @interface TableName {
      * 表描述
      */
     String description() default "";
+
+    /**
+     * 初始化语句
+     */
+    String init() default "";
 }

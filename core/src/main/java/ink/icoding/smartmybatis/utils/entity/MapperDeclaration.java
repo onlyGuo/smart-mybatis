@@ -29,6 +29,8 @@ public class MapperDeclaration {
 
     private TableField pkAnnotation;
 
+    private String initScriptResourcePath;
+
     private String baseInsertSql;
 
     public Class<? extends PO> getPoClass() {
@@ -147,5 +149,20 @@ public class MapperDeclaration {
                 ", pkGenerateType=" + pkGenerateType +
                 ", columnDeclarations=" + columnDeclarations +
                 '}';
+    }
+
+    /**
+     * 获取初始化脚本路径
+     */
+    public String getInitScriptResourcePath() {
+        return initScriptResourcePath;
+    }
+
+    /**
+     * 设置初始化脚本路径
+     * @param initScriptResourcePath 初始化脚本路径
+     */
+    public void setInitScriptResourcePath(String initScriptResourcePath) {
+        this.initScriptResourcePath = initScriptResourcePath;
     }
 }

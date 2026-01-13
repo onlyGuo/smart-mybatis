@@ -237,4 +237,180 @@ public interface SmartMapper<T extends PO> {
      */
     @UpdateProvider(type = BaseSqlProvider.class, method = "executeSql")
     int executeSql(@Param("sql") String sql, @Param("params") Map<String, Object> params);
+
+    /**
+     * 执行 SQL 脚本文件中的 SQL 语句, 可能有多条, 要智能拆分后, 并开启事务, 然后通过 executeSql依次执行
+     * @param script
+     *      SQL 脚本内容
+     * @return 受影响的记录数
+     */
+    default int executeSqlScript(String script) {
+        if (script == null || script.trim().isEmpty()) {
+            return 0;
+        }
+        int totalAffected = 0;
+        StringBuilder sb = new StringBuilder();
+
+        // 状态标记
+        // '...'
+        boolean inSingleQuote = false;
+        // "..."
+        boolean inDoubleQuote = false;
+        // `...`
+        boolean inBacktick = false;
+        // /* ... */
+        boolean inBlockComment = false;
+        // -- ... or # ...
+        boolean inLineComment = false;
+        // 是否处于转义状态 (\后面)
+        boolean isEscape = false;
+
+        char[] chars = script.toCharArray();
+        for (int i = 0; i < chars.length; i++) {
+            char c = chars[i];
+
+            // 预读下一个字符（用于判断 -- 和 /* 和 */）
+            char next = (i + 1 < chars.length) ? chars[i+1] : '\0';
+
+            // 1. 处理转义 (仅在字符串或反引号内有效，或者普通模式下的转义)
+            // MySQL 默认 \ 是转义符。
+            if (isEscape) {
+                sb.append(c);
+                isEscape = false;
+                continue;
+            }
+
+            // 2. 如果在单引号字符串内
+            if (inSingleQuote) {
+                sb.append(c);
+                if (c == '\\') {
+                    isEscape = true;
+                } else if (c == '\'') {
+                    inSingleQuote = false;
+                }
+                continue;
+            }
+
+            // 3. 如果在双引号字符串内
+            if (inDoubleQuote) {
+                sb.append(c);
+                if (c == '\\') {
+                    isEscape = true;
+                } else if (c == '"') {
+                    inDoubleQuote = false;
+                }
+                continue;
+            }
+
+            // 4. 如果在反引号内 (数据库表名/列名)
+            if (inBacktick) {
+                sb.append(c);
+                // 反引号内通常不支持 \ 转义，而是用 double backtick `` 转义，但 MySQL 有时也支持 \
+                // 这里按标准处理：遇到 ` 结束
+                if (c == '`') {
+                    inBacktick = false;
+                }
+                continue;
+            }
+
+            // 5. 如果在块注释内 /* ... */
+            if (inBlockComment) {
+                sb.append(c);
+                if (c == '*' && next == '/') {
+                    inBlockComment = false;
+                    // 追加 /
+                    sb.append('/');
+                    // 跳过下一个字符
+                    i++;
+                }
+                continue;
+            }
+
+            // 6. 如果在行注释内 -- ... 或 # ...
+            if (inLineComment) {
+                sb.append(c);
+                if (c == '\n') {
+                    inLineComment = false;
+                }
+                continue;
+            }
+
+            // --- 此时处于普通 SQL 模式 ---
+
+            // 检查是否开始转义
+            if (c == '\\') {
+                isEscape = true;
+                sb.append(c);
+                continue;
+            }
+
+            // 检查单引号
+            if (c == '\'') {
+                inSingleQuote = true;
+                sb.append(c);
+                continue;
+            }
+
+            // 检查双引号
+            if (c == '"') {
+                inDoubleQuote = true;
+                sb.append(c);
+                continue;
+            }
+
+            // 检查反引号
+            if (c == '`') {
+                inBacktick = true;
+                sb.append(c);
+                continue;
+            }
+
+            // 检查 # 注释
+            if (c == '#') {
+                inLineComment = true;
+                sb.append(c);
+                continue;
+            }
+
+            // 检查 -- 注释
+            if (c == '-' && next == '-') {
+                inLineComment = true;
+                sb.append(c);
+                sb.append(next);
+                i++;
+                continue;
+            }
+
+            // 检查 /* 注释
+            if (c == '/' && next == '*') {
+                inBlockComment = true;
+                sb.append(c);
+                sb.append(next);
+                i++; // 消耗 *
+                continue;
+            }
+
+            // 检查分号 -> 拆分点
+            if (c == ';') {
+                String sql = sb.toString().trim();
+                if (!sql.isEmpty()) {
+                    totalAffected += executeSql(sql, new java.util.HashMap<>());
+                }
+                // 清空
+                sb.setLength(0);
+                continue;
+            }
+
+            // 普通字符
+            sb.append(c);
+        }
+
+        // 处理最后剩余的 SQL
+        String lastSql = sb.toString().trim();
+        if (!lastSql.isEmpty()) {
+            totalAffected += executeSql(lastSql, new java.util.HashMap<>());
+        }
+
+        return totalAffected;
+    }
 }
