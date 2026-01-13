@@ -23,10 +23,13 @@ import org.springframework.context.annotation.Bean;
 @EnableConfigurationProperties(SmartMybatisProperties.class)
 public class SmartMybatisAutoConfiguration {
 
-    @Resource
-    private ApplicationContext applicationContext;
-
     private SmartMapperInitializer thisSmartMapperInitializer;
+
+    private final ApplicationContext applicationContext;
+
+    public SmartMybatisAutoConfiguration(ApplicationContext applicationContext) {
+        this.applicationContext = applicationContext;
+    }
 
     @Bean
     public SpringApplicationUtil springApplicationUtil() {

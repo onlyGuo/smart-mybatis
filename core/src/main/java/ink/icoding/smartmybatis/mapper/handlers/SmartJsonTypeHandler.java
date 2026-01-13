@@ -51,7 +51,7 @@ public class SmartJsonTypeHandler<T> extends BaseTypeHandler<T> {
     }
 
     /**
-     * 供 SmartMapperInitializer 手动实例化使用，完美支持 List<POJO>
+     * 供 SmartMapperInitializer 手动实例化使用，完美支持 List<Entity>等复杂泛型
      * @param type 反射获取的 GenericType
      */
     public SmartJsonTypeHandler(Type type) {
