@@ -91,4 +91,22 @@ public class LambdaFieldUtil {
         }
 
     }
+
+    public static Class<? extends PO> getPoClass(SFunction<? extends PO, ?> func) {
+        try {
+            Method writeReplace = func.getClass().getDeclaredMethod("writeReplace");
+            writeReplace.setAccessible(true);
+            Object serializedForm = writeReplace.invoke(func);
+
+            if (!(serializedForm instanceof SerializedLambda)) {
+                throw new RuntimeException("Not a lambda");
+            }
+            SerializedLambda lambda = (SerializedLambda) serializedForm;
+
+            String implClass = lambda.getImplClass();
+            return (Class<? extends PO>) Class.forName(implClass.replace('/', '.'));
+        } catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException | ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+    }
 }

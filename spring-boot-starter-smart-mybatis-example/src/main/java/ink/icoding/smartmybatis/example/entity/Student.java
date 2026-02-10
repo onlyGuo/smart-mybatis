@@ -16,6 +16,14 @@ public class Student extends PO {
     @ID
     private int id;
 
+    private int classifyId;
+
+    /**
+     * 外键关联字段, 非数据库表字段, 此时VALUE指定关联表的列名
+     */
+    @TableField(exist = false, value = "ID", link = Classify.class, linkField = "name")
+    private String classifyName;
+
     private String name;
 
     private int age;
@@ -63,5 +71,21 @@ public class Student extends PO {
 
     public void setHobbies(List<String> hobbies) {
         this.hobbies = hobbies;
+    }
+
+    public int getClassifyId() {
+        return classifyId;
+    }
+
+    public void setClassifyId(int classifyId) {
+        this.classifyId = classifyId;
+    }
+
+    public String getClassifyName() {
+        return classifyName;
+    }
+
+    public void setClassifyName(String classifyName) {
+        this.classifyName = classifyName;
     }
 }

@@ -11,3 +11,8 @@ spring:
       naming-convention: underline_upper
       table-prefix: sm_
       auto-sync-db: true
+logging:
+  file:
+    name: logs/spring-boot-starter-smart-mybatis-example.log
+  level:
+    ink.icoding.smartmybatis.example.mapper: debug

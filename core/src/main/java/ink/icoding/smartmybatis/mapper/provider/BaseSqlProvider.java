@@ -3,6 +3,7 @@ package ink.icoding.smartmybatis.mapper.provider;
 import ink.icoding.smartmybatis.entity.expression.*;
 import ink.icoding.smartmybatis.entity.po.PO;
 import ink.icoding.smartmybatis.entity.po.enums.PrimaryGenerateType;
+import ink.icoding.smartmybatis.entity.po.enums.TableField;
 import ink.icoding.smartmybatis.utils.LambdaFieldUtil;
 import ink.icoding.smartmybatis.utils.SnowflakeIdGeneratorUtil;
 import ink.icoding.smartmybatis.utils.entity.ColumnDeclaration;
@@ -157,7 +158,7 @@ public class BaseSqlProvider {
      */
     public String selectByWhere(Where where, ProviderContext context){
         Class<?> mapperType = context.getMapperType();
-        return buildSelectFields(MapperUtil.getMapperDeclaration(mapperType)) + buildWherePart(where);
+        return buildSelectFields(MapperUtil.getMapperDeclaration(mapperType), where) + buildWherePart(where, false);
     }
 
     /**
@@ -169,9 +170,9 @@ public class BaseSqlProvider {
     public String countByWhere(Where where, ProviderContext context) {
         Class<?> mapperType = context.getMapperType();
         MapperDeclaration declaration = MapperUtil.getMapperDeclaration(mapperType);
-        StringBuilder sql = new StringBuilder("SELECT COUNT(").append(declaration.getPkColumnName()).append(") AS ");
-        sql.append("`count` FROM `").append(declaration.getTableName()).append("`");
-        sql.append(buildWherePart(where));
+        StringBuilder sql = new StringBuilder("SELECT COUNT(").append("_t.").append(declaration.getPkColumnName()).append(") AS ");
+        sql.append("`count` FROM `").append(declaration.getTableName()).append("`").append(" AS _t");
+        sql.append(buildWherePart(where, false));
         return sql.toString();
     }
 
@@ -184,7 +185,7 @@ public class BaseSqlProvider {
     public String selectByPrimaryKey(Serializable id, ProviderContext context) {
         Class<?> mapperType = context.getMapperType();
         MapperDeclaration declaration = MapperUtil.getMapperDeclaration(mapperType);
-        return buildSelectFields(declaration) + " WHERE `" + declaration.getPkColumnName() + "` = #{id}";
+        return buildSelectFields(declaration, null) + " WHERE _t.`" + declaration.getPkColumnName() + "` = #{id}";
     }
 
     /**
@@ -217,7 +218,7 @@ public class BaseSqlProvider {
         Class<?> mapperType = context.getMapperType();
         MapperDeclaration declaration = MapperUtil.getMapperDeclaration(mapperType);
         return "DELETE FROM `" +
-                declaration.getTableName() + "` WHERE `" +
+                declaration.getTableName() + "` AS _t WHERE _t.`" +
                 declaration.getPkColumnName() + "` = #{id}";
     }
 
@@ -255,8 +256,8 @@ public class BaseSqlProvider {
         Class<?> mapperType = context.getMapperType();
         MapperDeclaration declaration = MapperUtil.getMapperDeclaration(mapperType);
         StringBuilder sql = new StringBuilder("DELETE FROM `")
-                .append(declaration.getTableName()).append("`");
-        sql.append(buildWherePart(where));
+                .append(declaration.getTableName()).append("`").append(" AS _t");
+        sql.append(buildWherePart(where, false));
         return sql.toString();
     }
 
@@ -300,7 +301,7 @@ public class BaseSqlProvider {
      *      查询条件表达式列表
      * @return Where 部分 SQL 语句
      */
-    private String buildWherePart(Where where) {
+    private String buildWherePart(Where where, boolean inOn) {
         if (null == where){
             return "";
         }
@@ -309,9 +310,16 @@ public class BaseSqlProvider {
         if ((null == expressions || expressions.isEmpty()) && limitSize == 0){
             return "";
         }
+        Map<String, AliasMapping<?>> aliasMappings = where.getAliasMappings();
+        Map<Class<? extends PO>, String> aliasMappingMap = new HashMap<>();
+        if (null != aliasMappings && !aliasMappings.isEmpty()){
+            for (AliasMapping<?> aliasMapping : aliasMappings.values()) {
+                aliasMappingMap.put(aliasMapping.getEntityClass(), aliasMapping.getAlias());
+            }
+        }
         StringBuilder wherePart = new StringBuilder();
         if (null != expressions && !expressions.isEmpty()){
-            wherePart.append(" WHERE");
+            wherePart.append(" ").append(inOn ? "ON" : "WHERE");
             for (int i = 0; i < expressions.size(); i++) {
                 ComparisonExpression<?> expression = expressions.get(i);
                 Link link = expression.getLink();
@@ -320,10 +328,23 @@ public class BaseSqlProvider {
                 }
                 SFunction<? extends PO, ?> func = expression.getFunc();
                 Field field = LambdaFieldUtil.getField(func);
+                // 取出实体类Class
+                Class<? extends PO> poClass = LambdaFieldUtil.getPoClass(func);
+                TableField tableField = field.getAnnotation(TableField.class);
                 C comparison = expression.getComparison();
+                String alias = aliasMappingMap.getOrDefault(poClass, "_t");
+                if (null != tableField && !tableField.exist()){
+                    // 可能是关联表字段, 需要处理
+                    if (tableField.link() == PO.class){
+                        throw new IllegalArgumentException("Field " + field.getName()
+                                + " is marked as non-existent in table, but no link entity specified.");
+                    }
+                    wherePart.append(" ").append(where.getGlobalWhereAliasValue(field)).append(" ");
+                }else{
+                    ColumnDeclaration columnDeclaration = MapperUtil.getColumnDeclaration(field);
+                    wherePart.append(" ").append(alias).append(".").append("`").append(columnDeclaration.getColumnName()).append("` ");
+                }
                 Object value = expression.getValue();
-                ColumnDeclaration columnDeclaration = MapperUtil.getColumnDeclaration(field);
-                wherePart.append(" `").append(columnDeclaration.getColumnName()).append("` ");
                 if (null == value){
                     if (comparison == C.EQ || comparison == C.equals){
                         wherePart.append("IS NULL ");
@@ -338,6 +359,21 @@ public class BaseSqlProvider {
                 }
 
                 wherePart.append(comparison.value()).append(" ");
+
+                // value 是否是 SFunction
+                if (value instanceof SFunction){
+                    SFunction<? extends PO, ?> valueFunc = (SFunction<? extends PO, ?>) value;
+                    Field valueField = LambdaFieldUtil.getField(valueFunc);
+                    ColumnDeclaration valueColumnDeclaration = MapperUtil.getColumnDeclaration(valueField);
+                    // 取出实体类Class
+                    Class<? extends PO> valuePoClass = LambdaFieldUtil.getPoClass(valueFunc);
+                    String valueAlias = aliasMappingMap.getOrDefault(valuePoClass, "_t");
+                    wherePart.append(valueAlias).append(".").append("`")
+                            .append(valueColumnDeclaration.getColumnName()).append("` ");
+                    where.putGlobalWhere(valueField, valueAlias);
+                    continue;
+                }
+
                 if (comparison == C.IN || comparison == C.NOT_IN || comparison == C.in || comparison == C.notIn) {
                     wherePart.append(" (");
                     // 判断 value 是否为 数组, 如果是数组则转换成 List
@@ -358,7 +394,11 @@ public class BaseSqlProvider {
                     }
                     wherePart.append(") ");
                 } else {
-                    wherePart.append("#{expressions[").append(i).append("].value} ");
+                    if (inOn){
+                        wherePart.append("#{aliasMappings.").append(alias).append(".onWhere.expressions[").append(i).append("].value} ");
+                    }else{
+                        wherePart.append("#{expressions[").append(i).append("].value} ");
+                    }
                     if (comparison == C.LIKE || comparison == C.NOT_LIKE ||
                             comparison == C.like || comparison == C.notLike) {
                         // 如果是模糊查询, 则在值前后添加 %
@@ -406,15 +446,70 @@ public class BaseSqlProvider {
      *      映射声明
      * @return SELECT 字段部分 SQL 语句
      */
-    private String buildSelectFields(MapperDeclaration mapperDeclaration) {
+    private String buildSelectFields(MapperDeclaration mapperDeclaration, Where where) {
         StringBuilder sql = new StringBuilder("SELECT ");
         for (ColumnDeclaration columnDeclaration : mapperDeclaration.getColumnDeclarations()) {
-            sql.append("`").append(columnDeclaration.getColumnName()).append("` AS ");
+            sql.append("_t.`").append(columnDeclaration.getColumnName()).append("` AS ");
             sql.append(columnDeclaration.getFieldName()).append(", ");
         }
         // ID
-        sql.append("`").append(mapperDeclaration.getPkColumnName()).append("` AS ").append(mapperDeclaration.getPkName());
-        sql.append(" FROM `").append(mapperDeclaration.getTableName()).append("`");
+        sql.append("_t.`").append(mapperDeclaration.getPkColumnName()).append("` AS ").append(mapperDeclaration.getPkName());
+        Map<String, AliasMapping<?>> aliasMappings = null;
+        if (null != where){
+            aliasMappings = where.getAliasMappings();
+        }
+        if (aliasMappings == null || aliasMappings.isEmpty()){
+            sql.append(" FROM `").append(mapperDeclaration.getTableName()).append("`").append(" AS _t");
+            return sql.toString();
+        }
+
+        // 有别名连接时, 继续处理别名连接部分
+        aliasMappings.values().forEach(aliasMapping -> {
+            aliasMapping.getSelectFields().forEach(sField -> {
+                Field field = LambdaFieldUtil.getField(sField);
+                TableField tableField = field.getAnnotation(TableField.class);
+                ColumnDeclaration columnDeclaration = null;
+                if (null != tableField && !tableField.exist() && tableField.link() != PO.class){
+                    // 如果是非数据库表字段, 且有关联表, 则查询关联表的字段
+                    String linkFieldName = tableField.linkField();
+                    if (linkFieldName == null || linkFieldName.isEmpty()){
+                        linkFieldName = field.getName();
+                    }
+                    try {
+                        Field declaredField = tableField.link().getDeclaredField(linkFieldName);
+                        columnDeclaration = MapperUtil.getColumnDeclaration(declaredField);
+                    } catch (NoSuchFieldException e) {
+                        throw new IllegalArgumentException("Linked field " + linkFieldName + " not found in class "
+                                + tableField.link().getName() + " for field " + field.getName());
+                    }
+                }else{
+                    throw new IllegalArgumentException("Select field " + field.getName()
+                            + " is not a linked field in alias mapping for alias "
+                            + aliasMapping.getAlias());
+                }
+                sql.append(", ")
+                        .append(aliasMapping.getAlias()).append(".`")
+                        .append(columnDeclaration.getColumnName()).append("` AS ")
+                        .append(field.getName());
+                where.putGlobalWhere(field, aliasMapping.getAlias() + ".`" + columnDeclaration.getColumnName() + "`");
+            });
+        });
+
+        // 处理别名连接
+        sql.append(" FROM `").append(mapperDeclaration.getTableName()).append("`").append(" AS _t");
+        for (AliasMapping<?> aliasMapping : aliasMappings.values()) {
+            MapperDeclaration declaration = MapperUtil.getMapperDeclarationByPoClass(aliasMapping.getEntityClass());
+
+            sql.append(" ").append(aliasMapping.getType())
+                    .append(" ").append("`").append(declaration.getTableName()).append("`")
+                    .append(" ").append(aliasMapping.getAlias());
+            // 构建 ON 条件
+            Where onWhere = aliasMapping.getOnWhere();
+            if (null != onWhere){
+                onWhere.setAliasMappings(aliasMappings);
+                sql.append(" ").append(buildWherePart(onWhere, true));
+            }
+        }
         return sql.toString();
     }
 }

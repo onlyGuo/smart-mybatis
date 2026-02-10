@@ -3,8 +3,11 @@ package ink.icoding.smartmybatis.entity.expression;
 import ink.icoding.smartmybatis.entity.po.PO;
 
 import java.io.Serializable;
+import java.lang.reflect.Field;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 查询条件表达式
@@ -15,6 +18,10 @@ public class Where {
     private List<ComparisonExpression<?>> expressions;
 
     private List<SortExpression<?>> sortExpressions;
+
+    private Map<String, AliasMapping<?>> aliasMappings;
+
+    private Map<Field, String> globalCacleAlias = new HashMap<>();
 
     private int limitSize;
 
@@ -251,4 +258,41 @@ public class Where {
         return sortExpressions;
     }
 
+    /**
+     * 添加左关联查询
+     * @param classType 别名对应的实体类
+     * @param alias 别名
+     * @param onWhere 连接条件
+     * @param selectFields 选择的字段
+     * @return 别名映射
+     */
+    @SafeVarargs
+    public final <T extends PO, R extends PO> Where leftJoin(Class<T> classType, String alias, Where onWhere, SFunction<R, ?>... selectFields) {
+        if (null == aliasMappings) {
+            aliasMappings = new HashMap<>();
+        }
+        if (aliasMappings.containsKey(alias)) {
+            throw new IllegalArgumentException("Alias '" + alias + "' is already used in the current query.");
+        }
+        AliasMapping<T> aliasMapping = new AliasMapping<>(classType, alias, "LEFT JOIN", selectFields);
+        aliasMapping.on(onWhere);
+        aliasMappings.put(alias, aliasMapping);
+        return this;
+    }
+
+    public Map<String, AliasMapping<?>> getAliasMappings() {
+        return aliasMappings;
+    }
+
+    public void setAliasMappings(Map<String, AliasMapping<?>> aliasMappings) {
+        this.aliasMappings = aliasMappings;
+    }
+
+    public void putGlobalWhere(Field valueField, String valueAlias) {
+        this.globalCacleAlias.put(valueField, valueAlias);
+    }
+
+    public String getGlobalWhereAliasValue(Field valueField) {
+        return this.globalCacleAlias.get(valueField);
+    }
 }

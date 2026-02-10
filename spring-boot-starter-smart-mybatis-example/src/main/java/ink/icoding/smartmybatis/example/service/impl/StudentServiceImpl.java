@@ -1,9 +1,13 @@
 package ink.icoding.smartmybatis.example.service.impl;
 
+import ink.icoding.smartmybatis.entity.expression.AliasMapping;
+import ink.icoding.smartmybatis.entity.expression.ComparisonExpressionBuilder;
 import ink.icoding.smartmybatis.entity.expression.Where;
+import ink.icoding.smartmybatis.example.entity.Classify;
 import ink.icoding.smartmybatis.example.entity.Student;
 import ink.icoding.smartmybatis.example.enums.Sex;
 import ink.icoding.smartmybatis.example.mapper.ChinaCitiesMapper;
+import ink.icoding.smartmybatis.example.mapper.ClassifyMapper;
 import ink.icoding.smartmybatis.example.mapper.StudentMapper;
 import ink.icoding.smartmybatis.example.service.StudentService;
 import jakarta.annotation.PostConstruct;
@@ -27,6 +31,9 @@ public class StudentServiceImpl implements StudentService {
 
     @Resource
     private ChinaCitiesMapper chinaCitiesMapper;
+
+    @Resource
+    private ClassifyMapper classifyMapper;
 
     @Override
     public List<Student> searchStudent(String name, Integer minAge, Integer maxAge, Sex sex) {
@@ -137,8 +144,32 @@ public class StudentServiceImpl implements StudentService {
                 .queryBySql("SELECT * FROM SM_STUDENT WHERE age >= ? AND sex = ?", 20, Sex.FEMALE);
         System.out.println("Custom SQL query results for age >= 20 and sex = FEMALE: " + maps);
 
+        List<Classify> classifies = new ArrayList<>();
+        for (int ci = 1; ci <= 3; ci++) {
+            Classify classify = new Classify();
+            classify.setName("Class" + ci);
+            classifies.add(classify);
+        }
+        classifyMapper.insertBatch(classifies);
+        for (Classify classify : classifies) {
+            Student student = new Student();
+            student.setName("学生-" + classify.getName());
+            student.setClassifyId(classify.getId());
+            studentMapper.insert(student);
+        }
+
+        Where where = Where.where().leftJoin(Classify.class, "c",
+                Where.where(Classify::getId).eq(Student::getClassifyId),
+                Student::getClassifyName
+        );
+        where.and(Student::getClassifyName).like("2");
+        List<Student> select = studentMapper.select(where);
+        System.out.println("Students with Classify joined: " + select);
+
+
         // Clear test data
         studentMapper.executeSql("TRUNCATE TABLE SM_STUDENT");
+        studentMapper.executeSql("TRUNCATE TABLE SM_CLASSIFY");
 
         // test init china cities data
         System.out.println(chinaCitiesMapper.selectAll());

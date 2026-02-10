@@ -53,6 +53,10 @@ public class ComparisonExpressionBuilder <T extends PO> {
         return buildDefault(value, C.EQ);
     }
 
+    public <R extends PO> Where eq(SFunction<R, ?> value) {
+        return buildDefault(value, C.EQ);
+    }
+
     /**
      * 与某值比较相同
      * @param value 比较值

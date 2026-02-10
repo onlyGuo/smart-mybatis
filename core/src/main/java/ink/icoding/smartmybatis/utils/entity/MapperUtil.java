@@ -28,6 +28,13 @@ public class MapperUtil {
      */
     private static final Map<Class<?>, MapperDeclaration> MAPPER_DECLARATION_MAP = new HashMap<>();
 
+    /**
+     * PO 类对应的 Mapper 声明缓存
+     */
+    private static final Map<Class<?>, MapperDeclaration> PO_MAPPER_DECLARATION_MAP = new HashMap<>();
+    /**
+     * 字段列声明缓存
+     */
     private static final Map<String, ColumnDeclaration> FIELD_COLUMN_DECLARATION_MAP = new HashMap<>();
 
     /**
@@ -39,7 +46,7 @@ public class MapperUtil {
         if (MAPPER_DECLARATION_MAP.containsKey(mapperType)) {
             return MAPPER_DECLARATION_MAP.get(mapperType);
         }
-        MapperDeclaration declaration = new MapperDeclaration();
+        Class<? extends PO> classType = null;
         Type[] genericInterfaces = mapperType.getGenericInterfaces();
         for (Type type : genericInterfaces) {
             if (type instanceof ParameterizedType) {
@@ -51,11 +58,7 @@ public class MapperUtil {
                     if (arg instanceof Class) {
                         Class<?> argClass = (Class<?>) arg;
                         if (PO.class.isAssignableFrom(argClass)) {
-                            declaration.setPoClass((Class<? extends PO>) argClass);
-                            TableName annotation = argClass.getAnnotation(TableName.class);
-                            if (null != annotation && annotation.init() != null && !annotation.init().isEmpty()){
-                                declaration.setInitScriptResourcePath(annotation.init());
-                            }
+                            classType = (Class<? extends PO>) argClass;
                             break;
                         }
                     }
@@ -63,43 +66,12 @@ public class MapperUtil {
             }
         }
 
-        if (declaration.getPoClass() == null) {
+        if (classType == null) {
             throw new IllegalArgumentException("Failed to determine PO class for mapper, " +
                     "not found generic type extends PO at:" + mapperType.getName());
         }
         // 字段
-        Field[] declaredFields = declaration.getPoClass().getDeclaredFields();
-        List<ColumnDeclaration> columnDeclarations = new ArrayList<>();
-        for (Field field : declaredFields) {
-            ID id = field.getAnnotation(ID.class);
-            if (null != id){
-                if (declaration.getPkName() != null){
-                    throw new IllegalArgumentException("Multiple primary key fields found in mapper:" +
-                            mapperType.getName() + ", fields:" + declaration.getPkName() + " and " + field.getName());
-                }
-                declaration.setPkName(field.getName());
-                declaration.setPkClass((Class<? extends java.io.Serializable>) field.getType());
-                declaration.setPkColumnName(getFieldColumnName(field.getAnnotation(TableField.class), field));
-                declaration.setPkGenerateType(id.generateType());
-                declaration.setPkAnnotation(field.getAnnotation(TableField.class));
-                if (id.generateType() != PrimaryGenerateType.AUTO && id.generateType() != PrimaryGenerateType.INPUT){
-                    if (declaration.getPkClass() != String.class){
-                        // 不是自增且不是手动输入，则必须是 String 类型
-                        throw new IllegalArgumentException("Primary key field with generate type "
-                                + id.generateType() + " must be String type, but found "
-                                + declaration.getPkClass().getName() + ", in mapper:" + mapperType.getName());
-                    }
-                }
-            }else{
-                ColumnDeclaration columnDeclaration = getColumnDeclaration(field);
-                columnDeclarations.add(columnDeclaration);
-            }
-        }
-        if (null == declaration.getPkName()){
-            throw new IllegalArgumentException("Primary key field not found in mapper:" + mapperType.getName());
-        }
-        applyTableName(declaration);
-        declaration.setColumnDeclarations(columnDeclarations);
+        MapperDeclaration declaration = getMapperDeclarationByPoClass(classType);
         MAPPER_DECLARATION_MAP.put(mapperType, declaration);
         return declaration;
     }
@@ -380,5 +352,63 @@ public class MapperUtil {
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new RuntimeException("Failed to set field value: " + fieldName, e);
         }
+    }
+
+    public static MapperDeclaration getMapperDeclarationByPoClass(Class<? extends PO> poClass) {
+        if (PO_MAPPER_DECLARATION_MAP.containsKey(poClass)) {
+            return PO_MAPPER_DECLARATION_MAP.get(poClass);
+        }
+        for (MapperDeclaration declaration : MAPPER_DECLARATION_MAP.values()) {
+            if (declaration.getPoClass().equals(poClass)) {
+                PO_MAPPER_DECLARATION_MAP.put(poClass, declaration);
+                return declaration;
+            }
+        }
+        // 未找到对应 Mapper 声明, 构建
+        MapperDeclaration declaration = new MapperDeclaration();
+        declaration.setPoClass(poClass);
+        Field[] declaredFields = declaration.getPoClass().getDeclaredFields();
+        List<ColumnDeclaration> columnDeclarations = new ArrayList<>();
+        for (Field field : declaredFields) {
+            ID id = field.getAnnotation(ID.class);
+            if (null != id){
+                if (declaration.getPkName() != null){
+                    throw new IllegalArgumentException("Multiple primary key fields found in mapper:" +
+                            declaration.getPoClass().getName() + ", fields:" + declaration.getPkName() + " and " + field.getName());
+                }
+                declaration.setPkName(field.getName());
+                declaration.setPkClass((Class<? extends java.io.Serializable>) field.getType());
+                declaration.setPkColumnName(getFieldColumnName(field.getAnnotation(TableField.class), field));
+                declaration.setPkGenerateType(id.generateType());
+                declaration.setPkAnnotation(field.getAnnotation(TableField.class));
+                if (id.generateType() != PrimaryGenerateType.AUTO && id.generateType() != PrimaryGenerateType.INPUT){
+                    if (declaration.getPkClass() != String.class){
+                        // 不是自增且不是手动输入，则必须是 String 类型
+                        throw new IllegalArgumentException("Primary key field with generate type "
+                                + id.generateType() + " must be String type, but found "
+                                + declaration.getPkClass().getName() + ", in mapper:" + poClass.getName());
+                    }
+                }
+            }else{
+                TableField tableField = field.getAnnotation(TableField.class);
+                if (tableField != null && !tableField.exist()){
+                    // 非数据库字段，跳过
+                    continue;
+                }
+                ColumnDeclaration columnDeclaration = getColumnDeclaration(field);
+                columnDeclarations.add(columnDeclaration);
+            }
+        }
+        if (null == declaration.getPkName()){
+            throw new IllegalArgumentException("Primary key field not found in mapper:" + poClass.getName());
+        }
+        applyTableName(declaration);
+        declaration.setColumnDeclarations(columnDeclarations);
+        TableName annotation = poClass.getAnnotation(TableName.class);
+        if (null != annotation && annotation.init() != null && !annotation.init().isEmpty()){
+            declaration.setInitScriptResourcePath(annotation.init());
+        }
+        PO_MAPPER_DECLARATION_MAP.put(poClass, declaration);
+        return declaration;
     }
 }

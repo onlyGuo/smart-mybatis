@@ -1,6 +1,9 @@
 package ink.icoding.smartmybatis.entity.po.enums;
 
 
+import ink.icoding.smartmybatis.entity.expression.SFunction;
+import ink.icoding.smartmybatis.entity.po.PO;
+
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -41,4 +44,8 @@ public @interface TableField {
     String columnType() default "";
 
     int length() default 255;
+
+    Class<? extends PO> link() default PO.class;
+
+    String linkField() default "";
 }
