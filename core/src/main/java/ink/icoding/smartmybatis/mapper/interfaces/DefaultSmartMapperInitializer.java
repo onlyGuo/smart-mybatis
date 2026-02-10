@@ -18,6 +18,7 @@ import org.apache.ibatis.session.Configuration;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.slf4j.Logger;
 import org.springframework.context.ApplicationContext;
+import org.springframework.util.StringUtils;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Constructor;
@@ -115,8 +116,25 @@ public class DefaultSmartMapperInitializer implements SmartMapperInitializer {
         DataSource dataSource = applicationContext.getBean(DataSource.class);
         try (Connection connection = dataSource.getConnection()) {
             DatabaseMetaData metaData = connection.getMetaData();
+
+            String catalog = connection.getCatalog();
+            String schema = null;
+            try {
+                schema = connection.getSchema();
+            } catch (Throwable ignore) {
+            }
+            if (!StringUtils.hasText(schema) && mapperDeclaration.getTableName().contains(".")) {
+                String[] parts = mapperDeclaration.getTableName().split("\\.");
+                if (parts.length == 2) {
+                    schema = parts[0];
+                }
+                if (schema != null && (schema.startsWith("\"") && schema.endsWith("\"") || schema.startsWith("`") && schema.endsWith("`"))) {
+                    schema = schema.substring(1, schema.length() - 1);
+                }
+            }
+
             boolean hasTable = false;
-            try (ResultSet rs = metaData.getTables(null, null,
+            try (ResultSet rs = metaData.getTables(catalog, schema,
                     mapperDeclaration.getTableName(), new String[]{"TABLE"})) {
                 hasTable = rs.next();
             }
@@ -124,7 +142,7 @@ public class DefaultSmartMapperInitializer implements SmartMapperInitializer {
                 MapperUtil.generateTable(smartMapper, mapperDeclaration);
             } else {
                 List<ColumnDeclaration> existingColumns = new ArrayList<>();
-                try (ResultSet fieldRs = metaData.getColumns(null, null, mapperDeclaration.getTableName(), null)) {
+                try (ResultSet fieldRs = metaData.getColumns(catalog, schema, mapperDeclaration.getTableName(), null)) {
                     while (fieldRs.next()) {
                         String columnName = fieldRs.getString("COLUMN_NAME");
                         String dataType = fieldRs.getString("TYPE_NAME");
