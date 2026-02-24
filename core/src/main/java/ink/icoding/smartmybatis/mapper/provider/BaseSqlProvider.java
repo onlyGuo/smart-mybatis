@@ -311,10 +311,10 @@ public class BaseSqlProvider {
             return "";
         }
         Map<String, AliasMapping<?>> aliasMappings = where.getAliasMappings();
-        Map<Class<? extends PO>, String> aliasMappingMap = new HashMap<>();
+        Map<String, String> aliasMappingMap = new HashMap<>();
         if (null != aliasMappings && !aliasMappings.isEmpty()){
             for (AliasMapping<?> aliasMapping : aliasMappings.values()) {
-                aliasMappingMap.put(aliasMapping.getEntityClass(), aliasMapping.getAlias());
+                aliasMappingMap.put(aliasMapping.getEntityClass().getName(), aliasMapping.getAlias());
             }
         }
         StringBuilder wherePart = new StringBuilder();
@@ -332,7 +332,7 @@ public class BaseSqlProvider {
                 Class<? extends PO> poClass = LambdaFieldUtil.getPoClass(func);
                 TableField tableField = field.getAnnotation(TableField.class);
                 C comparison = expression.getComparison();
-                String alias = aliasMappingMap.getOrDefault(poClass, "_t");
+                String alias = aliasMappingMap.getOrDefault(poClass.getName(), "_t");
                 if (null != tableField && !tableField.exist()){
                     // 可能是关联表字段, 需要处理
                     if (tableField.link() == PO.class){
@@ -367,7 +367,7 @@ public class BaseSqlProvider {
                     ColumnDeclaration valueColumnDeclaration = MapperUtil.getColumnDeclaration(valueField);
                     // 取出实体类Class
                     Class<? extends PO> valuePoClass = LambdaFieldUtil.getPoClass(valueFunc);
-                    String valueAlias = aliasMappingMap.getOrDefault(valuePoClass, "_t");
+                    String valueAlias = aliasMappingMap.getOrDefault(valuePoClass.getName(), "_t");
                     wherePart.append(valueAlias).append(".").append("`")
                             .append(valueColumnDeclaration.getColumnName()).append("` ");
                     where.putGlobalWhere(valueField, valueAlias);
