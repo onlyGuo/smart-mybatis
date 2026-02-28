@@ -167,6 +167,15 @@ public class StudentServiceImpl implements StudentService {
         System.out.println("Students with Classify joined: " + select);
 
 
+        // 测试or条件嵌套
+        where = Where.where().and(Where.or(
+                Where.where(Student::getName).like("1"),
+                Where.where(Student::getName).like("3")
+        ));
+        List<Student> orSelect = studentMapper.select(where);
+        System.out.println("Students with OR condition: " + orSelect);
+
+
         // Clear test data
         studentMapper.executeSql("TRUNCATE TABLE SM_STUDENT");
         studentMapper.executeSql("TRUNCATE TABLE SM_CLASSIFY");

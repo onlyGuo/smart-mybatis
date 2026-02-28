@@ -8,7 +8,7 @@ import java.io.Serializable;
  * 条件比较表类
  * @author gsk
  */
-public class ComparisonExpression<T extends PO> implements Serializable {
+public class ComparisonExpression<T extends PO> implements Expression<T> {
     private SFunction<T, ?> func;
     private C comparison;
     private Object value;

@@ -301,11 +301,24 @@ public class BaseSqlProvider {
      *      查询条件表达式列表
      * @return Where 部分 SQL 语句
      */
-    private String buildWherePart(Where where, boolean inOn) {
+    private String buildWherePart(Where where, boolean inOn){
+        return buildWherePart(where, inOn, null);
+    }
+
+    /**
+     * 构建 Where 部分 SQL 语句
+     * @param where
+     *      查询条件表达式列表
+     * @return Where 部分 SQL 语句
+     */
+    private String buildWherePart(Where where, boolean inOn, String parentParamPrefix) {
         if (null == where){
             return "";
         }
-        List<ComparisonExpression<?>> expressions = where.getExpressions();
+        if (null == parentParamPrefix){
+            parentParamPrefix = "";
+        }
+        List<Expression<?>> expressions = where.getExpressions();
         int limitSize = where.getLimitSize();
         if ((null == expressions || expressions.isEmpty()) && limitSize == 0){
             return "";
@@ -321,17 +334,36 @@ public class BaseSqlProvider {
         if (null != expressions && !expressions.isEmpty()){
             wherePart.append(" ").append(inOn ? "ON" : "WHERE");
             for (int i = 0; i < expressions.size(); i++) {
-                ComparisonExpression<?> expression = expressions.get(i);
-                Link link = expression.getLink();
+                Expression<?> expression = expressions.get(i);
+                if (expression instanceof WhereExpression){
+                    WhereExpression whereExpression = (WhereExpression) expression;
+                    Where subWhere = whereExpression.getWhere();
+                    subWhere.setAliasMappings(aliasMappings);
+                    String subWhereSql = buildWherePart(subWhere, false, parentParamPrefix + "expressions[" + i + "].where.");
+                    if (subWhereSql.isEmpty()){
+                        continue;
+                    }
+                    if (subWhereSql.trim().startsWith("WHERE")){
+                        subWhereSql = subWhereSql.trim().substring(5);
+                    }
+                    if (i > 0){
+                        wherePart.append(" ").append(whereExpression.getLink().name()).append(" ");
+                    }
+                    wherePart.append(" (").append(subWhereSql).append(") ");
+                    continue;
+                }
+                ComparisonExpression<?> comparisonExpression = (ComparisonExpression<?>) expression;
+
+                Link link = comparisonExpression.getLink();
                 if (null != link && i > 0) {
                     wherePart.append(" ").append(link.name()).append(" ");
                 }
-                SFunction<? extends PO, ?> func = expression.getFunc();
+                SFunction<? extends PO, ?> func = comparisonExpression.getFunc();
                 Field field = LambdaFieldUtil.getField(func);
                 // 取出实体类Class
                 Class<? extends PO> poClass = LambdaFieldUtil.getPoClass(func);
                 TableField tableField = field.getAnnotation(TableField.class);
-                C comparison = expression.getComparison();
+                C comparison = comparisonExpression.getComparison();
                 String alias = aliasMappingMap.getOrDefault(poClass.getName(), "_t");
                 if (null != tableField && !tableField.exist()){
                     // 可能是关联表字段, 需要处理
@@ -344,7 +376,7 @@ public class BaseSqlProvider {
                     ColumnDeclaration columnDeclaration = MapperUtil.getColumnDeclaration(field);
                     wherePart.append(" ").append(alias).append(".").append("`").append(columnDeclaration.getColumnName()).append("` ");
                 }
-                Object value = expression.getValue();
+                Object value = comparisonExpression.getValue();
                 if (null == value){
                     if (comparison == C.EQ || comparison == C.equals){
                         wherePart.append("IS NULL ");
@@ -386,7 +418,7 @@ public class BaseSqlProvider {
                     }
                     Collection<?> valueList = (Collection<?>) value;
                     for (int cl = 0; cl < valueList.size(); cl++) {
-                        wherePart.append("#{expressions[").append(i)
+                        wherePart.append("#{").append(parentParamPrefix).append("expressions[").append(i)
                                 .append("].value[").append(cl).append("]}");
                         if (cl < valueList.size() - 1) {
                             wherePart.append(", ");
@@ -397,7 +429,7 @@ public class BaseSqlProvider {
                     if (inOn){
                         wherePart.append("#{aliasMappings.").append(alias).append(".onWhere.expressions[").append(i).append("].value} ");
                     }else{
-                        wherePart.append("#{expressions[").append(i).append("].value} ");
+                        wherePart.append("#{").append(parentParamPrefix).append("expressions[").append(i).append("].value} ");
                     }
                     if (comparison == C.LIKE || comparison == C.NOT_LIKE ||
                             comparison == C.like || comparison == C.notLike) {
@@ -405,7 +437,7 @@ public class BaseSqlProvider {
                         String strValue = value.toString();
                         if (!strValue.contains("%")) {
                             strValue = "%" + strValue + "%";
-                            expression.setValue(strValue);
+                            comparisonExpression.setValue(strValue);
                         }
                     }
                 }

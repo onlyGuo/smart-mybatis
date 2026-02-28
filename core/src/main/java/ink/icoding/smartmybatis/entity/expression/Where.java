@@ -15,7 +15,7 @@ import java.util.Map;
  */
 public class Where {
 
-    private List<ComparisonExpression<?>> expressions;
+    private List<Expression<?>> expressions;
 
     private List<SortExpression<?>> sortExpressions;
 
@@ -33,6 +33,28 @@ public class Where {
      */
     public static Where where(){
         return new Where();
+    }
+
+    /**
+     * 将多个 Where 条件对象使用 OR 连接起来
+     * @param where 第一个 Where 条件对象
+     * @param wheres 其他 Where 条件对象
+     * @return 连接后的 Where 条件对象
+     */
+    public static Where or(Where where, Where ... wheres){
+        if (null == where){
+            throw new IllegalArgumentException("The first 'where' parameter cannot be null.");
+        }
+        if (null == wheres || wheres.length == 0){
+            throw new IllegalArgumentException("At least one 'where' parameter must be provided in the 'wheres' varargs.");
+        }
+        Where parent = Where.where();
+        parent.appendExpression(new WhereExpression(where, Link.OR));
+        for (Where w : wheres) {
+            parent.appendExpression(new WhereExpression(w, Link.OR));
+        }
+        return parent;
+
     }
 
     /**
@@ -74,7 +96,7 @@ public class Where {
      * 获取比较表达式列表
      * @return 比较表达式列表
      */
-    public List<ComparisonExpression<?>> getExpressions() {
+    public List<Expression<?>> getExpressions() {
         return expressions;
     }
 
@@ -83,7 +105,7 @@ public class Where {
      * @param expression 比较表达式列表
      * @return 当前 Where 对象
      */
-    public Where appendExpression(ComparisonExpression<?> expression) {
+    public Where appendExpression(Expression<?> expression) {
         if (this.expressions == null) {
             this.expressions = new LinkedList<>();
         }
@@ -126,6 +148,15 @@ public class Where {
      */
     public <T extends PO> ComparisonExpressionBuilder<T> and(SFunction<T, ?> func) {
         return new ComparisonExpressionBuilder<T>(func, this, Link.AND, false);
+    }
+
+    /**
+     * 添加一个 AND 连接的比较表达式
+     * @param where 另一个 Where 条件对象
+     * @return 当前 Where 对象
+     */
+    public Where and(Where where) {
+        return appendExpression(new WhereExpression(where, Link.AND));
     }
 
     /**
