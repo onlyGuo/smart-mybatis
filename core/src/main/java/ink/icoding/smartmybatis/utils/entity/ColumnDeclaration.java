@@ -25,6 +25,10 @@ public class ColumnDeclaration {
 
     private TableField annotation;
 
+    private boolean link;
+
+    private String alias;
+
     public Field getField() {
         return field;
     }
@@ -79,5 +83,21 @@ public class ColumnDeclaration {
 
     public void setAnnotation(TableField annotation) {
         this.annotation = annotation;
+    }
+
+    public boolean isLink() {
+        return link;
+    }
+
+    public void setLink(boolean link) {
+        this.link = link;
+    }
+
+    public String getAlias() {
+        return alias;
+    }
+
+    public void setAlias(String alias) {
+        this.alias = alias;
     }
 }

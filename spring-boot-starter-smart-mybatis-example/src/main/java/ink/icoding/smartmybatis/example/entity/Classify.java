@@ -1,8 +1,10 @@
 package ink.icoding.smartmybatis.example.entity;
 
 import ink.icoding.smartmybatis.entity.po.PO;
+import ink.icoding.smartmybatis.entity.po.enums.SmartMeta;
 import ink.icoding.smartmybatis.entity.po.enums.ID;
 
+@SmartMeta
 public class Classify extends PO {
 
     @ID

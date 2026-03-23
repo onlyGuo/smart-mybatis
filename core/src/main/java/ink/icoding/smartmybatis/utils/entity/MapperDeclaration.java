@@ -6,6 +6,7 @@ import ink.icoding.smartmybatis.entity.po.enums.TableField;
 
 import java.io.Serializable;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Mapper 声明信息
@@ -74,7 +75,14 @@ public class MapperDeclaration {
     }
 
     public List<ColumnDeclaration> getColumnDeclarations() {
-        return columnDeclarations;
+        return getColumnDeclarations(false);
+    }
+
+    public List<ColumnDeclaration> getColumnDeclarations(boolean includeLinked) {
+        if (includeLinked) {
+            return columnDeclarations;
+        }
+        return columnDeclarations.stream().filter(cd -> !cd.isLink()).collect(Collectors.toList());
     }
 
     public void setColumnDeclarations(List<ColumnDeclaration> columnDeclarations) {

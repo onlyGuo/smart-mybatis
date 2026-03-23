@@ -37,6 +37,9 @@ public class MapperUtil {
      */
     private static final Map<String, ColumnDeclaration> FIELD_COLUMN_DECLARATION_MAP = new HashMap<>();
 
+    private static final String GENERATED_META_SUBPACKAGE = ".M.";
+    private static final String GENERATED_META_PREFIX = "$";
+
     /**
      * 获取 Mapper 声明的信息
      * @param mapperType mapper 类
@@ -143,6 +146,7 @@ public class MapperUtil {
         declaration.setAnnotation(tableField);
         if (null != tableField){
             declaration.setDescription(tableField.description());
+            declaration.setLink(tableField.link() != PO.class);
         }
     }
 
@@ -358,13 +362,26 @@ public class MapperUtil {
         if (PO_MAPPER_DECLARATION_MAP.containsKey(poClass)) {
             return PO_MAPPER_DECLARATION_MAP.get(poClass);
         }
+
+        MapperDeclaration generatedDeclaration = resolveGeneratedMapperDeclaration(poClass);
+        if (generatedDeclaration != null) {
+            PO_MAPPER_DECLARATION_MAP.put(poClass, generatedDeclaration);
+            return generatedDeclaration;
+        }
+
         for (MapperDeclaration declaration : MAPPER_DECLARATION_MAP.values()) {
             if (declaration.getPoClass().equals(poClass)) {
                 PO_MAPPER_DECLARATION_MAP.put(poClass, declaration);
                 return declaration;
             }
         }
-        // 未找到对应 Mapper 声明, 构建
+
+        MapperDeclaration declaration = buildMapperDeclarationByPoClass(poClass);
+        PO_MAPPER_DECLARATION_MAP.put(poClass, declaration);
+        return declaration;
+    }
+
+    public static MapperDeclaration buildMapperDeclarationByPoClass(Class<? extends PO> poClass) {
         MapperDeclaration declaration = new MapperDeclaration();
         declaration.setPoClass(poClass);
         Field[] declaredFields = declaration.getPoClass().getDeclaredFields();
@@ -383,7 +400,6 @@ public class MapperUtil {
                 declaration.setPkAnnotation(field.getAnnotation(TableField.class));
                 if (id.generateType() != PrimaryGenerateType.AUTO && id.generateType() != PrimaryGenerateType.INPUT){
                     if (declaration.getPkClass() != String.class){
-                        // 不是自增且不是手动输入，则必须是 String 类型
                         throw new IllegalArgumentException("Primary key field with generate type "
                                 + id.generateType() + " must be String type, but found "
                                 + declaration.getPkClass().getName() + ", in mapper:" + poClass.getName());
@@ -392,7 +408,12 @@ public class MapperUtil {
             }else{
                 TableField tableField = field.getAnnotation(TableField.class);
                 if (tableField != null && !tableField.exist()){
-                    // 非数据库字段，跳过
+                    if (tableField.link() == null || tableField.link() == PO.class){
+                        // 非数据库字段且非关联字段，跳过
+                        continue;
+                    }
+                    ColumnDeclaration linkDeclaration = buildLinkColumnDeclaration(field, tableField);
+                    columnDeclarations.add(linkDeclaration);
                     continue;
                 }
                 ColumnDeclaration columnDeclaration = getColumnDeclaration(field);
@@ -408,7 +429,81 @@ public class MapperUtil {
         if (null != annotation && annotation.init() != null && !annotation.init().isEmpty()){
             declaration.setInitScriptResourcePath(annotation.init());
         }
-        PO_MAPPER_DECLARATION_MAP.put(poClass, declaration);
         return declaration;
+    }
+
+    private static ColumnDeclaration buildLinkColumnDeclaration(Field field, TableField tableField) {
+        String linkFieldName = tableField.linkField();
+        if (!StringUtils.hasText(linkFieldName)) {
+            linkFieldName = field.getName();
+        }
+        try {
+            Field declaredField = tableField.link().getDeclaredField(linkFieldName);
+            ColumnDeclaration relationColumn = getColumnDeclaration(declaredField);
+            ColumnDeclaration linkDeclaration = new ColumnDeclaration();
+            linkDeclaration.setField(field);
+            linkDeclaration.setFieldName(field.getName());
+            linkDeclaration.setColumnName(relationColumn.getColumnName());
+            linkDeclaration.setColumnType(relationColumn.getColumnType());
+            linkDeclaration.setAnnotation(tableField);
+            linkDeclaration.setLink(true);
+            return linkDeclaration;
+        } catch (NoSuchFieldException e) {
+            throw new IllegalArgumentException("Linked field " + linkFieldName + " not found in class "
+                    + tableField.link().getName() + " for field " + field.getName(), e);
+        }
+    }
+
+    public static ColumnDeclaration getFieldDeclarationByPoClass(Class<? extends PO> poClass, String fieldName) {
+        try {
+            Field field = poClass.getDeclaredField(fieldName);
+            ID id = field.getAnnotation(ID.class);
+            if (id != null) {
+                TableField tableField = field.getAnnotation(TableField.class);
+                ColumnDeclaration declaration = new ColumnDeclaration();
+                declaration.setField(field);
+                declaration.setFieldName(field.getName());
+                declaration.setColumnName(getFieldColumnName(tableField, field));
+                declaration.setColumnType(NamingUtil.javaTypeToSqlType(field.getType(), tableField));
+                declaration.setJson(tableField != null && tableField.json());
+                declaration.setAnnotation(tableField);
+                if (tableField != null) {
+                    declaration.setDescription(tableField.description());
+                }
+                return declaration;
+            }
+            ColumnDeclaration declaration = new ColumnDeclaration();
+            declaration.setField(field);
+            applyFieldColumnName(declaration);
+            return declaration;
+        } catch (NoSuchFieldException e) {
+            throw new IllegalArgumentException("Field not found in PO: " + poClass.getName() + "." + fieldName, e);
+        }
+    }
+
+    private static MapperDeclaration resolveGeneratedMapperDeclaration(Class<? extends PO> poClass) {
+        String poPackage = poClass.getPackage() == null ? "" : poClass.getPackage().getName();
+        String prefixedMetaName = poPackage + GENERATED_META_SUBPACKAGE + GENERATED_META_PREFIX + poClass.getSimpleName();
+        MapperDeclaration declaration = resolveGeneratedMapperDeclaration(prefixedMetaName, poClass);
+        if (declaration != null) {
+            return declaration;
+        }
+        String legacyMetaName = poPackage + GENERATED_META_SUBPACKAGE + poClass.getSimpleName();
+        return resolveGeneratedMapperDeclaration(legacyMetaName, poClass);
+    }
+
+    private static MapperDeclaration resolveGeneratedMapperDeclaration(String metaTypeName, Class<? extends PO> poClass) {
+        try {
+            Class<?> generated = Class.forName(metaTypeName, true, poClass.getClassLoader());
+            Object instance = generated.getField("INSTANCE").get(null);
+            if (instance instanceof MapperDeclaration) {
+                return (MapperDeclaration) instance;
+            }
+            return null;
+        } catch (ClassNotFoundException e) {
+            return null;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to read generated mapper metadata: " + metaTypeName, e);
+        }
     }
 }

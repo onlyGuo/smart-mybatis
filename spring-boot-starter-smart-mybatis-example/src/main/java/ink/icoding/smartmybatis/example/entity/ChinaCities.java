@@ -1,6 +1,7 @@
 package ink.icoding.smartmybatis.example.entity;
 
 import ink.icoding.smartmybatis.entity.po.PO;
+import ink.icoding.smartmybatis.entity.po.enums.SmartMeta;
 import ink.icoding.smartmybatis.entity.po.enums.ID;
 import ink.icoding.smartmybatis.entity.po.enums.TableField;
 import ink.icoding.smartmybatis.entity.po.enums.TableName;
@@ -11,6 +12,7 @@ import java.util.List;
  * 中国城市经纬度表 china_cities
  * @author gsk
  */
+@SmartMeta
 @TableName(init = "testInitSql.sql")
 public class ChinaCities extends PO {
 

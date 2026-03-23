@@ -62,6 +62,15 @@ public interface SmartMapper<T extends PO> {
     List<T> select(Where where);
 
     /**
+     * 根据条件查询记录, 同时查询关联字段的数据
+     * @param where
+     *      查询条件
+     * @return 记录列表
+     */
+    @SelectProvider(type = BaseSqlProvider.class, method = "selectWithRelationsByWhere")
+    List<T> selectWithRelations(Where where);
+
+    /**
      * 根据条件查询树形结构数据
      * @param where
      *      查询条件

@@ -1,7 +1,6 @@
 package ink.icoding.smartmybatis.entity.po.enums;
 
 
-import ink.icoding.smartmybatis.entity.expression.SFunction;
 import ink.icoding.smartmybatis.entity.po.PO;
 
 import java.lang.annotation.ElementType;
@@ -43,9 +42,29 @@ public @interface TableField {
      */
     String columnType() default "";
 
+    /**
+     * 内容长度
+     */
     int length() default 255;
 
+    /**
+     * 关联查询, 指定关联的 PO 类
+     */
     Class<? extends PO> link() default PO.class;
 
+    /**
+     * 关联查询, 指定关联实体的字段名
+     */
     String linkField() default "";
+
+    /**
+     * 关联查询, 本实体的关联键
+     */
+    String self() default "";
+
+    /**
+     * 关联查询, 目标实体的关联键
+     */
+    String target() default "";
+
 }

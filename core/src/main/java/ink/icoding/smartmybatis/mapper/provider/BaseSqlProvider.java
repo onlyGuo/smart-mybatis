@@ -10,6 +10,8 @@ import ink.icoding.smartmybatis.utils.entity.ColumnDeclaration;
 import ink.icoding.smartmybatis.utils.entity.MapperDeclaration;
 import ink.icoding.smartmybatis.utils.entity.MapperUtil;
 import org.apache.ibatis.builder.annotation.ProviderContext;
+import org.springframework.util.StringUtils;
+
 import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.util.*;
@@ -159,6 +161,11 @@ public class BaseSqlProvider {
     public String selectByWhere(Where where, ProviderContext context){
         Class<?> mapperType = context.getMapperType();
         return buildSelectFields(MapperUtil.getMapperDeclaration(mapperType), where) + buildWherePart(where, false);
+    }
+
+    public String selectWithRelationsByWhere(Where where, ProviderContext context){
+        Class<?> mapperType = context.getMapperType();
+        return buildSelectFields(MapperUtil.getMapperDeclaration(mapperType), where, true) + buildWherePart(where, false);
     }
 
     /**
@@ -360,21 +367,16 @@ public class BaseSqlProvider {
                 }
                 SFunction<? extends PO, ?> func = comparisonExpression.getFunc();
                 Field field = LambdaFieldUtil.getField(func);
-                // 取出实体类Class
                 Class<? extends PO> poClass = LambdaFieldUtil.getPoClass(func);
-                TableField tableField = field.getAnnotation(TableField.class);
                 C comparison = comparisonExpression.getComparison();
                 String alias = aliasMappingMap.getOrDefault(poClass.getName(), "_t");
-                if (null != tableField && !tableField.exist()){
-                    // 可能是关联表字段, 需要处理
-                    if (tableField.link() == PO.class){
-                        throw new IllegalArgumentException("Field " + field.getName()
-                                + " is marked as non-existent in table, but no link entity specified.");
-                    }
-                    wherePart.append(" ").append(where.getGlobalWhereAliasValue(field)).append(" ");
-                }else{
-                    ColumnDeclaration columnDeclaration = MapperUtil.getColumnDeclaration(field);
-                    wherePart.append(" ").append(alias).append(".").append("`").append(columnDeclaration.getColumnName()).append("` ");
+
+                String fieldSqlRef = resolveFieldSqlRef(where, field, poClass, aliasMappingMap);
+                if (StringUtils.hasText(fieldSqlRef)) {
+                    wherePart.append(" ").append(fieldSqlRef).append(" ");
+                } else {
+                    wherePart.append(" ").append(alias).append(".").append("`")
+                            .append(MapperUtil.getColumnDeclaration(field).getColumnName()).append("` ");
                 }
                 Object value = comparisonExpression.getValue();
                 if (null == value){
@@ -392,17 +394,17 @@ public class BaseSqlProvider {
 
                 wherePart.append(comparison.value()).append(" ");
 
-                // value 是否是 SFunction
                 if (value instanceof SFunction){
                     SFunction<? extends PO, ?> valueFunc = (SFunction<? extends PO, ?>) value;
                     Field valueField = LambdaFieldUtil.getField(valueFunc);
-                    ColumnDeclaration valueColumnDeclaration = MapperUtil.getColumnDeclaration(valueField);
-                    // 取出实体类Class
                     Class<? extends PO> valuePoClass = LambdaFieldUtil.getPoClass(valueFunc);
-                    String valueAlias = aliasMappingMap.getOrDefault(valuePoClass.getName(), "_t");
-                    wherePart.append(valueAlias).append(".").append("`")
-                            .append(valueColumnDeclaration.getColumnName()).append("` ");
-                    where.putGlobalWhere(valueField, valueAlias);
+                    String valueRef = resolveFieldSqlRef(where, valueField, valuePoClass, aliasMappingMap);
+                    if (!StringUtils.hasText(valueRef)) {
+                        ColumnDeclaration valueColumnDeclaration = MapperUtil.getColumnDeclaration(valueField);
+                        String valueAlias = aliasMappingMap.getOrDefault(valuePoClass.getName(), "_t");
+                        valueRef = valueAlias + ".`" + valueColumnDeclaration.getColumnName() + "`";
+                    }
+                    wherePart.append(valueRef).append(" ");
                     continue;
                 }
 
@@ -412,9 +414,29 @@ public class BaseSqlProvider {
                     if (value.getClass().isArray()) {
                         value = Arrays.asList((Object[]) value);
                     }
-                    if (!(value instanceof Collection)) {
+                    if (!(value instanceof Collection<?>)) {
                         throw new IllegalArgumentException("Value for IN or NOT IN comparison must be a Collection or Array, but got: "
                                 + value.getClass().getName());
+                    } else {
+                        // 如果是 Collection, 还需要判断是否为空, 如果为空则替换成一个永远不成立的条件
+                        if (((Collection<?>) value).isEmpty()){
+
+                            if (comparison == C.IN || comparison == C.in){
+                                wherePart.setLength(wherePart.length() - "IN (".length() - 1);
+                                wherePart.setLength(wherePart.toString().trim().lastIndexOf(" ") + 1);
+                                // 永远不成立的条件
+                                wherePart.append(" 1=0");
+                            }else {
+                                wherePart.setLength(wherePart.length() - "NOT IN (".length() - 1);
+                                wherePart.setLength(wherePart.toString().trim().lastIndexOf(" ") + 1);
+                                // 永远成立的条件
+                                wherePart.append(" 1=1");
+                            }
+                        }else if (value instanceof Set){
+                            // 如果是 Set, 需要转换成 List, 因为 Set 没有 get(int index) 方法
+                            value = new ArrayList<>((Set<?>) value);
+                            comparisonExpression.setValue(value);
+                        }
                     }
                     Collection<?> valueList = (Collection<?>) value;
                     for (int cl = 0; cl < valueList.size(); cl++) {
@@ -424,7 +446,9 @@ public class BaseSqlProvider {
                             wherePart.append(", ");
                         }
                     }
-                    wherePart.append(") ");
+                    if (!valueList.isEmpty()){
+                        wherePart.append(") ");
+                    }
                 } else {
                     if (inOn){
                         wherePart.append("#{aliasMappings.").append(alias).append(".onWhere.expressions[").append(i).append("].value} ");
@@ -452,8 +476,14 @@ public class BaseSqlProvider {
                 SortExpression<?> sortExpression = sortExpressions.get(i);
                 SFunction<? extends PO, ?> func = sortExpression.getFunc();
                 Field field = LambdaFieldUtil.getField(func);
-                ColumnDeclaration columnDeclaration = MapperUtil.getColumnDeclaration(field);
-                orderByPart.append("`").append(columnDeclaration.getColumnName()).append("` ")
+                Class<? extends PO> poClass = LambdaFieldUtil.getPoClass(func);
+                String orderRef = resolveFieldSqlRef(where, field, poClass, aliasMappingMap);
+                if (!StringUtils.hasText(orderRef)) {
+                    ColumnDeclaration columnDeclaration = MapperUtil.getColumnDeclaration(field);
+                    String orderAlias = aliasMappingMap.getOrDefault(poClass.getName(), "_t");
+                    orderRef = orderAlias + ".`" + columnDeclaration.getColumnName() + "`";
+                }
+                orderByPart.append(orderRef).append(" ")
                         .append(sortExpression.getDirection().name());
                 if (i < sortExpressions.size() - 1) {
                     orderByPart.append(", ");
@@ -479,9 +509,40 @@ public class BaseSqlProvider {
      * @return SELECT 字段部分 SQL 语句
      */
     private String buildSelectFields(MapperDeclaration mapperDeclaration, Where where) {
+        return buildSelectFields(mapperDeclaration, where, false);
+    }
+
+    /**
+     * 构建 SELECT 字段部分 SQL 语句
+     * @param mapperDeclaration
+     *      映射声明
+     * @return SELECT 字段部分 SQL 语句
+     */
+    private String buildSelectFields(MapperDeclaration mapperDeclaration, Where where, boolean inRelation) {
         StringBuilder sql = new StringBuilder("SELECT ");
-        for (ColumnDeclaration columnDeclaration : mapperDeclaration.getColumnDeclarations()) {
-            sql.append("_t.`").append(columnDeclaration.getColumnName()).append("` AS ");
+        int inRelationIndex = 0;
+        Map<Class<? extends PO>, String> relationAliasMap = new LinkedHashMap<>();
+        for (ColumnDeclaration columnDeclaration : mapperDeclaration.getColumnDeclarations(inRelation)) {
+            if (columnDeclaration.isLink()){
+                TableField tableField = columnDeclaration.getAnnotation();
+                Class<? extends PO> linkClass = tableField == null ? PO.class : tableField.link();
+                String alias = columnDeclaration.getAlias();
+                if (!StringUtils.hasText(alias) && linkClass != PO.class) {
+                    alias = relationAliasMap.get(linkClass);
+                }
+                if (!StringUtils.hasText(alias)){
+                    alias = "_rel" + inRelationIndex++;
+                }
+                if (linkClass != PO.class && !relationAliasMap.containsKey(linkClass)) {
+                    relationAliasMap.put(linkClass, alias);
+                }
+                sql.append(alias).append(".`").append(columnDeclaration.getColumnName()).append("` AS ");
+                if (where != null && columnDeclaration.getField() != null) {
+                    where.putGlobalWhere(columnDeclaration.getField(), alias + ".`" + columnDeclaration.getColumnName() + "`");
+                }
+            }else{
+                sql.append("_t.`").append(columnDeclaration.getColumnName()).append("` AS ");
+            }
             sql.append(columnDeclaration.getFieldName()).append(", ");
         }
         // ID
@@ -492,6 +553,9 @@ public class BaseSqlProvider {
         }
         if (aliasMappings == null || aliasMappings.isEmpty()){
             sql.append(" FROM `").append(mapperDeclaration.getTableName()).append("`").append(" AS _t");
+            if (inRelation) {
+                appendAutoRelationJoins(sql, mapperDeclaration, relationAliasMap);
+            }
             return sql.toString();
         }
 
@@ -529,6 +593,11 @@ public class BaseSqlProvider {
 
         // 处理别名连接
         sql.append(" FROM `").append(mapperDeclaration.getTableName()).append("`").append(" AS _t");
+
+        if (inRelation) {
+            appendAutoRelationJoins(sql, mapperDeclaration, relationAliasMap);
+        }
+
         for (AliasMapping<?> aliasMapping : aliasMappings.values()) {
             MapperDeclaration declaration = MapperUtil.getMapperDeclarationByPoClass(aliasMapping.getEntityClass());
 
@@ -543,5 +612,93 @@ public class BaseSqlProvider {
             }
         }
         return sql.toString();
+    }
+
+    private void appendAutoRelationJoins(StringBuilder sql,
+                                         MapperDeclaration mapperDeclaration,
+                                         Map<Class<? extends PO>, String> relationAliasMap) {
+        if (relationAliasMap.isEmpty()) {
+            return;
+        }
+        Set<String> joinedAliases = new HashSet<>();
+        for (ColumnDeclaration columnDeclaration : mapperDeclaration.getColumnDeclarations(true)) {
+            if (!columnDeclaration.isLink()) {
+                continue;
+            }
+            TableField tableField = columnDeclaration.getAnnotation();
+            if (tableField == null || tableField.link() == PO.class) {
+                continue;
+            }
+            String alias = relationAliasMap.get(tableField.link());
+            if (!StringUtils.hasText(alias) || !joinedAliases.add(alias)) {
+                continue;
+            }
+            MapperDeclaration relDeclaration = MapperUtil.getMapperDeclarationByPoClass(tableField.link());
+            String relJoinColumn = resolveRelationJoinColumn(tableField, relDeclaration);
+            String baseJoinColumn = resolveBaseJoinColumn(mapperDeclaration, columnDeclaration);
+            sql.append(" LEFT JOIN `").append(relDeclaration.getTableName()).append("` ")
+                    .append(alias)
+                    .append(" ON ")
+                    .append(alias).append(".`").append(relJoinColumn).append("`")
+                    .append(" = _t.`").append(baseJoinColumn).append("`");
+        }
+    }
+
+    private String resolveRelationJoinColumn(TableField tableField, MapperDeclaration relDeclaration) {
+        if (StringUtils.hasText(tableField.value())) {
+            return tableField.value();
+        }
+        return relDeclaration.getPkColumnName();
+    }
+
+    private String resolveBaseJoinColumn(MapperDeclaration mapperDeclaration,
+                                         ColumnDeclaration linkColumn) {
+        TableField annotation = linkColumn.getAnnotation();
+        if (null == annotation) {
+            throw new IllegalArgumentException("Link column " + linkColumn.getFieldName()
+                    + " must have TableField annotation for auto relation join");
+        }
+        String self = annotation.self();
+        if (!StringUtils.hasText(self)) {
+            throw new IllegalArgumentException("Link column " + linkColumn.getFieldName()
+                    + " must specify self field name for auto relation join");
+        }
+        ColumnDeclaration declaration = MapperUtil.getFieldDeclarationByPoClass(mapperDeclaration.getPoClass(), self);
+        return declaration.getColumnName();
+    }
+
+    private String resolveFieldSqlRef(Where where,
+                                      Field field,
+                                      Class<? extends PO> poClass,
+                                      Map<String, String> aliasMappingMap) {
+        String cached = where.getGlobalWhereAliasValue(field);
+        if (StringUtils.hasText(cached)) {
+            return cached;
+        }
+        TableField tableField = field.getAnnotation(TableField.class);
+        if (tableField != null && !tableField.exist()) {
+            if (tableField.link() == PO.class) {
+                return null;
+            }
+            String alias = aliasMappingMap.get(tableField.link().getName());
+            if (!StringUtils.hasText(alias)) {
+                return null;
+            }
+            String linkFieldName = tableField.linkField();
+            if (!StringUtils.hasText(linkFieldName)) {
+                linkFieldName = field.getName();
+            }
+            try {
+                Field declaredField = tableField.link().getDeclaredField(linkFieldName);
+                ColumnDeclaration declaration = MapperUtil.getColumnDeclaration(declaredField);
+                return alias + ".`" + declaration.getColumnName() + "`";
+            } catch (NoSuchFieldException e) {
+                throw new IllegalArgumentException("Linked field " + linkFieldName + " not found in class "
+                        + tableField.link().getName() + " for field " + field.getName(), e);
+            }
+        }
+        ColumnDeclaration declaration = MapperUtil.getColumnDeclaration(field);
+        String alias = aliasMappingMap.getOrDefault(poClass.getName(), "_t");
+        return alias + ".`" + declaration.getColumnName() + "`";
     }
 }

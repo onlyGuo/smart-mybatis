@@ -1,7 +1,5 @@
 package ink.icoding.smartmybatis.example.service.impl;
 
-import ink.icoding.smartmybatis.entity.expression.AliasMapping;
-import ink.icoding.smartmybatis.entity.expression.ComparisonExpressionBuilder;
 import ink.icoding.smartmybatis.entity.expression.Where;
 import ink.icoding.smartmybatis.example.entity.Classify;
 import ink.icoding.smartmybatis.example.entity.Student;
@@ -14,10 +12,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Student 服务实现类
@@ -51,7 +46,7 @@ public class StudentServiceImpl implements StudentService {
     }
 
     @PostConstruct
-    public void test(){
+    public void test() {
 
         // Batch insert test data
         String[] names = {"张无忌", "张三丰", "赵敏", "周芷若", "殷素素", "小昭", "谢逊", "成昆", "韦一笑", "杨逍"};
@@ -175,12 +170,31 @@ public class StudentServiceImpl implements StudentService {
         List<Student> orSelect = studentMapper.select(where);
         System.out.println("Students with OR condition: " + orSelect);
 
+        List<Student> select1 = studentMapper.select(Where.where(Student::getId).in(new HashSet<>(Arrays.asList(7, 8, 9))));
+        System.out.println("Students with ID in (7, 8, 9): " + select1);
 
-        // Clear test data
+
+        List<Student> select2 = studentMapper.select(Where.where(Student::getId).notIn(new HashSet<>(Arrays.asList(7, 8, 9))));
+        System.out.println("Students with ID Not in (7, 8, 9): " + select2);
+
+        List<Student> select3 = studentMapper.select(Where.where(Student::getId).notIn(new HashSet<>()));
+        System.out.println("Students with ID Not in null (should return all): " + select3);
+
+        List<Student> select4 = studentMapper.select(Where.where(Student::getId).in(new HashSet<>()));
+        System.out.println("Students with ID in null (should return empty): " + select4);
+
+        List<Student> students1 = studentMapper.selectWithRelations(Where.where(Student::getId).in(
+                Arrays.asList(12,13,14)
+        ));
+        System.out.println("Students with relations by IDs" + students1);
+
+//        // Clear test data
         studentMapper.executeSql("TRUNCATE TABLE SM_STUDENT");
         studentMapper.executeSql("TRUNCATE TABLE SM_CLASSIFY");
 
         // test init china cities data
         System.out.println(chinaCitiesMapper.selectAll());
+
+
     }
 }

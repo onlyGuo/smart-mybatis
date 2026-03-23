@@ -1,6 +1,7 @@
 package ink.icoding.smartmybatis.example.entity;
 
 import ink.icoding.smartmybatis.entity.po.PO;
+import ink.icoding.smartmybatis.entity.po.enums.SmartMeta;
 import ink.icoding.smartmybatis.entity.po.enums.ID;
 import ink.icoding.smartmybatis.entity.po.enums.TableField;
 import ink.icoding.smartmybatis.example.enums.Sex;
@@ -11,6 +12,7 @@ import java.util.List;
  * Student 实体类, 对应数据库中的 student 表
  * @author gsk
  */
+@SmartMeta
 public class Student extends PO {
 
     @ID
@@ -21,7 +23,7 @@ public class Student extends PO {
     /**
      * 外键关联字段, 非数据库表字段, 此时VALUE指定关联表的列名
      */
-    @TableField(exist = false, value = "ID", link = Classify.class, linkField = "name")
+    @TableField(exist = false, link = Classify.class, linkField = "name", self = "classifyId", target = "id")
     private String classifyName;
 
     private String name;
