@@ -11,7 +11,9 @@ import org.apache.ibatis.type.JdbcType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.Reader;
 import java.lang.reflect.Type;
 import java.sql.CallableStatement;
 import java.sql.PreparedStatement;
@@ -62,7 +64,7 @@ public class SmartJsonTypeHandler<T> extends BaseTypeHandler<T> {
     public void setNonNullParameter(PreparedStatement ps, int i, T parameter, JdbcType jdbcType) throws SQLException {
         try {
             String json = objectMapper.writeValueAsString(parameter);
-            ps.setString(i, json);
+            ps.setClob(i, new java.io.StringReader(json), json.length());
         } catch (JsonProcessingException e) {
             throw new SQLException("Error converting object to JSON: " + parameter, e);
         }
@@ -70,13 +72,13 @@ public class SmartJsonTypeHandler<T> extends BaseTypeHandler<T> {
 
     @Override
     public T getNullableResult(ResultSet rs, String columnName) throws SQLException {
-        String json = rs.getString(columnName);
+        String json = readText(rs.getCharacterStream(columnName), rs.getString(columnName));
         return parseJson(json);
     }
 
     @Override
     public T getNullableResult(ResultSet rs, int columnIndex) throws SQLException {
-        String json = rs.getString(columnIndex);
+        String json = readText(rs.getCharacterStream(columnIndex), rs.getString(columnIndex));
         return parseJson(json);
     }
 
@@ -91,10 +93,39 @@ public class SmartJsonTypeHandler<T> extends BaseTypeHandler<T> {
             return null;
         }
         try {
-            return objectMapper.readValue(json, javaType);
+            return objectMapper.readValue(normalizeJson(json), javaType);
         } catch (IOException e) {
             log.error("Failed to parse JSON: {}", json, e);
             throw new SQLException("Error converting JSON to object", e);
         }
+    }
+
+    private String readText(Reader reader, String fallback) throws SQLException {
+        if (reader == null) {
+            return fallback;
+        }
+        try (Reader closeableReader = reader;
+             BufferedReader bufferedReader = new BufferedReader(closeableReader)) {
+            StringBuilder sb = new StringBuilder();
+            char[] buffer = new char[1024];
+            int len;
+            while ((len = bufferedReader.read(buffer)) != -1) {
+                sb.append(buffer, 0, len);
+            }
+            return sb.toString();
+        } catch (IOException e) {
+            throw new SQLException("Error reading JSON text from character stream", e);
+        }
+    }
+
+    private String normalizeJson(String json) {
+        String normalized = json;
+        if (!normalized.isEmpty() && normalized.charAt(0) == '\uFEFF') {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.indexOf('\u0000') >= 0) {
+            normalized = normalized.replace("\u0000", "");
+        }
+        return normalized.trim();
     }
 }

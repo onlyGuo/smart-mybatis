@@ -2,10 +2,10 @@ spring:
   application:
     name: spring-boot-starter-smart-mybatis-example
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://g.ai:3306/smart_mybatis_example?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
-    username: db_test
-    password: db_test
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:smart_mybatis_example;MODE=MySQL;DATABASE_TO_UPPER=true;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
   mybatis:
     smart:
       naming-convention: underline_upper

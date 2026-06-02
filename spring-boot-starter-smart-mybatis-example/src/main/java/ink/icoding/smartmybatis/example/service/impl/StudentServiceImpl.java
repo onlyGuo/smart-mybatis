@@ -8,10 +8,12 @@ import ink.icoding.smartmybatis.example.mapper.ChinaCitiesMapper;
 import ink.icoding.smartmybatis.example.mapper.ClassifyMapper;
 import ink.icoding.smartmybatis.example.mapper.StudentMapper;
 import ink.icoding.smartmybatis.example.service.StudentService;
+import ink.icoding.smartmybatis.utils.file.FileUtil;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -48,6 +50,10 @@ public class StudentServiceImpl implements StudentService {
     @PostConstruct
     public void test() {
 
+        // Clear previous demo data first so startup remains repeatable even after a failed run.
+        studentMapper.executeSql("TRUNCATE TABLE SM_STUDENT");
+        studentMapper.executeSql("TRUNCATE TABLE SM_CLASSIFY");
+
         // Batch insert test data
         String[] names = {"张无忌", "张三丰", "赵敏", "周芷若", "殷素素", "小昭", "谢逊", "成昆", "韦一笑", "杨逍"};
         List<Student> students = new ArrayList<>();
@@ -62,6 +68,12 @@ public class StudentServiceImpl implements StudentService {
         int i1 = studentMapper.insertBatch(students);
         System.out.println("Inserted students: " + students + ", Number of rows inserted: " + i1);
 
+        Student sss = new Student();
+        sss.setName("666");
+        sss.setAge(18 );
+        sss.setSex(Sex.FEMALE);
+        sss.setHobbies(Arrays.asList("唱", "跳", "Rap", "篮球"));
+        studentMapper.insert(sss);
         // Search test
         List<Student> result1 = searchStudent("张", 18, 24, Sex.FEMALE);
         System.out.println("Search results: " + result1);
@@ -124,7 +136,7 @@ public class StudentServiceImpl implements StudentService {
         System.out.println("All students: " + allStudents);
 
         // Select By IDs test
-        List<Integer> ids = Arrays.asList(1, 2, 3);
+        List<Integer> ids = firstStudentIds(allStudents, 3);
         List<Student> studentsByIds = studentMapper.select(Where.where(Student::getId).in(ids));
         System.out.println("Students by IDs " + ids + ": " + studentsByIds);
 
@@ -146,11 +158,17 @@ public class StudentServiceImpl implements StudentService {
             classifies.add(classify);
         }
         classifyMapper.insertBatch(classifies);
+        List<Student> studentClassList = new ArrayList<>();
+        List<Integer> relationStudentIds = new ArrayList<>();
         for (Classify classify : classifies) {
             Student student = new Student();
             student.setName("学生-" + classify.getName());
             student.setClassifyId(classify.getId());
-            studentMapper.insert(student);
+            studentClassList.add(student);
+        }
+        studentMapper.insertBatch(studentClassList);
+        for (Student student : studentClassList) {
+            relationStudentIds.add(student.getId());
         }
 
         Where where = Where.where().leftJoin(Classify.class, "c",
@@ -170,31 +188,45 @@ public class StudentServiceImpl implements StudentService {
         List<Student> orSelect = studentMapper.select(where);
         System.out.println("Students with OR condition: " + orSelect);
 
-        List<Student> select1 = studentMapper.select(Where.where(Student::getId).in(new HashSet<>(Arrays.asList(7, 8, 9))));
-        System.out.println("Students with ID in (7, 8, 9): " + select1);
+        List<Student> select1 = studentMapper.select(Where.where(Student::getId).in(new HashSet<>(relationStudentIds)));
+        System.out.println("Students with relation IDs " + relationStudentIds + ": " + select1);
 
 
-        List<Student> select2 = studentMapper.select(Where.where(Student::getId).notIn(new HashSet<>(Arrays.asList(7, 8, 9))));
-        System.out.println("Students with ID Not in (7, 8, 9): " + select2);
+        List<Student> select2 = studentMapper.select(Where.where(Student::getId).notIn(new HashSet<>(relationStudentIds)));
+        System.out.println("Students with ID Not in relation IDs " + relationStudentIds + ": " + select2);
 
         List<Student> select3 = studentMapper.select(Where.where(Student::getId).notIn(new HashSet<>()));
-        System.out.println("Students with ID Not in null (should return all): " + select3);
+        System.out.println("Students with ID Not in empty set (should return all): " + select3);
 
         List<Student> select4 = studentMapper.select(Where.where(Student::getId).in(new HashSet<>()));
-        System.out.println("Students with ID in null (should return empty): " + select4);
+        System.out.println("Students with ID in empty set (should return empty): " + select4);
 
-        List<Student> students1 = studentMapper.selectWithRelations(Where.where(Student::getId).in(
-                Arrays.asList(12,13,14)
-        ));
+        List<Student> students1 = studentMapper.selectWithRelations(Where.where(Student::getId).in(relationStudentIds));
         System.out.println("Students with relations by IDs" + students1);
 
 //        // Clear test data
         studentMapper.executeSql("TRUNCATE TABLE SM_STUDENT");
         studentMapper.executeSql("TRUNCATE TABLE SM_CLASSIFY");
+        studentMapper.executeSql("TRUNCATE TABLE SM_CHINA_CITIES");
 
         // test init china cities data
+        chinaCitiesMapper.executeSqlScript(new String(FileUtil.readResource("testInitSql.sql"), StandardCharsets.UTF_8));
         System.out.println(chinaCitiesMapper.selectAll());
 
 
+    }
+
+    private List<Integer> firstStudentIds(List<Student> students, int size) {
+        List<Integer> ids = new ArrayList<>();
+        if (students == null) {
+            return ids;
+        }
+        for (Student student : students) {
+            ids.add(student.getId());
+            if (ids.size() >= size) {
+                break;
+            }
+        }
+        return ids;
     }
 }

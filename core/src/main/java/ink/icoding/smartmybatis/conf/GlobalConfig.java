@@ -23,6 +23,16 @@ public class GlobalConfig {
 
     private String tablePrefix = "";
 
+    /**
+     * SQL 方言对应的 JDBC 驱动类名
+     * <p>
+     * 为空时自动从 spring.datasource.driver-class-name 读取并填充，
+     * 然后根据驱动类名匹配对应的 SQL 方言实现。
+     * <p>
+     * 手动配置示例：com.mysql.cj.jdbc.Driver
+     */
+    private String dialectDriverClassName = "";
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -55,6 +65,14 @@ public class GlobalConfig {
         this.tablePrefix = tablePrefix;
     }
 
+    public String getDialectDriverClassName() {
+        return dialectDriverClassName;
+    }
+
+    public void setDialectDriverClassName(String dialectDriverClassName) {
+        this.dialectDriverClassName = dialectDriverClassName;
+    }
+
     @Override
     public String toString() {
         return "GlobalConfig{" +
@@ -62,6 +80,7 @@ public class GlobalConfig {
                 ", autoSyncDb=" + autoSyncDb +
                 ", namingConvention=" + namingConvention +
                 ", tablePrefix='" + tablePrefix + '\'' +
+                ", dialectDriverClassName='" + dialectDriverClassName + '\'' +
                 '}';
     }
 }
