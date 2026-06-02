@@ -1,5 +1,6 @@
 package ink.icoding.smartmybatis.utils;
 
+import ink.icoding.smartmybatis.conf.SmartConfigHolder;
 import ink.icoding.smartmybatis.entity.po.enums.TableField;
 
 /**
@@ -58,47 +59,11 @@ public class NamingUtil {
         return sb.toString();
     }
 
+    /**
+     * @deprecated 请使用 {@link SmartConfigHolder#getDialect()#javaTypeToSql(Class, TableField)} 代替
+     */
+    @Deprecated
     public static String javaTypeToSqlType(Class<?> type, TableField tableField) {
-        int length = 255;
-        if (null != tableField) {
-            if (tableField.columnType() != null && !tableField.columnType().isEmpty()) {
-                return tableField.columnType();
-            }
-            length = tableField.length();
-        }
-        if (0 == length){
-            length = 255;
-        }
-        if (type == Integer.class || type == int.class) {
-            return "INT(11)";
-        } else if (type == Long.class || type == long.class) {
-            return "BIGINT";
-        } else if (type == Boolean.class || type == boolean.class) {
-            return "TINYINT(1)";
-        } else if (type == java.util.Date.class || type == java.sql.Date.class) {
-            return "DATETIME";
-        } else if (type == Double.class || type == double.class) {
-            return "DECIMAL(17, 6)";
-        } else if (type == Float.class || type == float.class) {
-            return "DECIMAL(17, 1)";
-        } else if (type == java.math.BigDecimal.class) {
-            return "DECIMAL(17, 6)";
-            // 是否是枚举类型
-        } else if (type.isEnum()) {
-            return "VARCHAR(255)";
-        }else {
-            if (null != tableField && tableField.json()){
-                return "LONGTEXT";
-            }
-        }
-
-        // 默认按字符串处理
-        if (length <= 16383){
-            return "VARCHAR(" + length + ")";
-        }else if (length <= 65535){
-            return "TEXT";
-        }else{
-            return "LONGTEXT";
-        }
+        return SmartConfigHolder.getDialect().javaTypeToSql(type, tableField);
     }
 }

@@ -47,6 +47,49 @@ smart-mybatis/
 - **Example**：`StudentServiceImpl` 展示 DSL 查询、自动插入与 `@PostConstruct` 自检。
 - **数据流**：实体定义 → `SmartMapper` 泛型推断 → `MapperUtil` 缓存声明 → `BaseSqlProvider` 输出 SQL → MyBatis 执行 → 可选 `auto-sync-db` 调整表。
 
+## 方言机制
+Smart MyBatis 的 SQL 差异全部收敛在 `SqlDialects` 接口中，框架主体只关心实体元数据和通用 CRUD 流程，不在业务代码里硬编码数据库分支。
+
+- **自动选择方言**：启动时 `SmartMybatisInitializer` 先绑定 `spring.mybatis.smart.*` 配置；如果没有显式配置 `dialect-driver-class-name`，会读取 `spring.datasource.driver-class-name`。随后 `DialectResolver` 扫描 `ink.icoding.smartmybatis.mapper.provider.dialects.impl` 包下带 `@SmartDialect` 的实现类，按 JDBC driver class 精确匹配方言；匹配失败时兜底使用 MySQL 方言。
+- **统一生成 SQL**：`BaseSqlProvider` 会通过 `SmartConfigHolder.getDialect()` 获取当前方言，再委托方言生成分页、引用符、字段类型、DDL、批量插入、关联查询别名等 SQL 片段。
+- **自动建表与变更**：`auto-sync-db=true` 时，`DefaultSmartMapperInitializer` 会读取数据库元数据，再通过当前方言生成 `CREATE TABLE`、`ALTER TABLE`、主键列、字段类型与列变更语句，因此同一份实体可以落到 MySQL、H2、Oracle、DB2 等不同数据库。
+
+当前内置方言包括：
+
+| 方言 | JDBC Driver |
+| --- | --- |
+| MySQL | `com.mysql.cj.jdbc.Driver`, `com.mysql.jdbc.Driver` |
+| H2 | `org.h2.Driver` |
+| Oracle | `oracle.jdbc.OracleDriver`, `oracle.jdbc.driver.OracleDriver` |
+| DB2 | `com.ibm.db2.jcc.DB2Driver`, `COM.ibm.db2.jdbc.app.DB2Driver` |
+
+### 自定义方言
+自定义方言只需要实现 `SqlDialects` 并添加 `@SmartDialect`：
+
+```java
+@SmartDialect("org.example.Driver")
+public class ExampleDialect implements SqlDialects {
+    @Override
+    public String quote(String identifier) {
+        return "\"" + identifier + "\"";
+    }
+
+    @Override
+    public String buildLimit(int offset, int size) {
+        return " LIMIT " + size + " OFFSET " + offset;
+    }
+}
+```
+
+如果数据源驱动名无法自动匹配，也可以显式指定：
+
+```yaml
+spring:
+  mybatis:
+    smart:
+      dialect-driver-class-name: org.example.Driver
+```
+
 ## 快速开始(Spring Boot)
 > 假设你的项目为 [spring-boot-starter-smart-mybatis-example](spring-boot-starter-smart-mybatis-example) 示例应用, 您可以在这里找示例代码。
 1. 在你的项目中确保显式引入官方 MyBatis 依赖 以及本库：
@@ -61,13 +104,14 @@ smart-mybatis/
    <dependency>
      <groupId>ink.icoding</groupId>
      <artifactId>spring-boot-starter-smart-mybatis</artifactId>
-     <version>2.0.2</version><!--version-->
+     <version>3.0.1</version><!--version-->
    </dependency>
    ```
 2. 在`application.yaml`中配置数据库连接以及`smart mybatis`
    ```yaml
     spring:
       datasource:
+         driver-class-name: com.mysql.cj.jdbc.Driver
          url: jdbc:mysql://localhost:3306/your_db?useSSL=false&serverTimezone=UTC
          username: your_username
          password: your_password
@@ -114,6 +158,7 @@ List<Student> students = studentMapper.select(
 | `spring.mybatis.smart.auto-sync-db` | 自动将实体新增字段同步至表（仅新增、不删） | `true` |
 | `spring.mybatis.smart.naming-convention` | `underline_upper` / `underline_lower` / `as_is` | `underline_upper` |
 | `spring.mybatis.smart.table-prefix` | 统一的表前缀 | `sm_` |
+| `spring.mybatis.smart.dialect-driver-class-name` | 强制指定方言的 JDBC driver class | `com.mysql.cj.jdbc.Driver` |
 
 命名约定示例：实体 `StudentProfile` 在 `underline_upper + sm_` 模式下将映射为 `SM_STUDENT_PROFILE`，字段 `createdAt` 将生成为 `CREATED_AT` 列。
 
@@ -149,9 +194,49 @@ MapperUtil & MapperDeclaration (metadata cache)
         ↓
 BaseSqlProvider (builds SQL)
         ↓
+SqlDialects (database-specific  SQL fragments)    
+        ↓
 MyBatis / Spring Boot Starter
         ↓
 Example app
+```
+
+### Dialect Mechanism
+Database differences are centralized in the `SqlDialects` interface. The framework keeps the entity metadata and CRUD flow shared, while each dialect owns SQL fragments that vary by database.
+
+- **Automatic dialect selection**: during startup, `SmartMybatisInitializer` binds `spring.mybatis.smart.*`. If `dialect-driver-class-name` is not configured, it reads `spring.datasource.driver-class-name`. `DialectResolver` then scans dialect implementations annotated with `@SmartDialect` and matches the JDBC driver class exactly. If no match is found, MySQL is used as the fallback dialect.
+- **SQL generation pipeline**: `BaseSqlProvider` handles provider methods such as `insert`, `select`, `update`, `delete`, and `count`. It reads the current dialect from `SmartConfigHolder.getDialect()` and delegates quoting, pagination, Java-to-SQL type mapping, DDL, batch insert, and relation alias syntax to that dialect.
+- **Schema synchronization**: when `auto-sync-db=true`, `DefaultSmartMapperInitializer` reads database metadata and asks the active dialect to generate `CREATE TABLE`, `ALTER TABLE`, primary key definitions, column types, and column changes.
+- **Generated key handling**: the initializer patches MyBatis `MappedStatement`s for key backfilling. Most databases use JDBC generated keys; databases with special identity behavior, such as Oracle batch inserts, can expose dialect hooks so the framework adapts internally while application code keeps calling `insertBatch`.
+
+Built-in dialects:
+
+| Dialect | JDBC Driver |
+| --- | --- |
+| MySQL | `com.mysql.cj.jdbc.Driver`, `com.mysql.jdbc.Driver` |
+| H2 | `org.h2.Driver` |
+| Oracle | `oracle.jdbc.OracleDriver`, `oracle.jdbc.driver.OracleDriver` |
+| DB2 | `com.ibm.db2.jcc.DB2Driver`, `COM.ibm.db2.jdbc.app.DB2Driver` |
+
+To add a custom dialect, implement `SqlDialects` and annotate it with `@SmartDialect`:
+
+```java
+@SmartDialect("org.example.Driver")
+public class ExampleDialect implements SqlDialects {
+    @Override
+    public String quote(String identifier) {
+        return "\"" + identifier + "\"";
+    }
+}
+```
+
+You can also choose a dialect explicitly when the datasource driver cannot be matched automatically:
+
+```yaml
+spring:
+  mybatis:
+    smart:
+      dialect-driver-class-name: org.example.Driver
 ```
 
 ### Lightweight Principles
@@ -181,7 +266,7 @@ Example app
    <dependency>
      <groupId>ink.icoding</groupId>
      <artifactId>spring-boot-starter-smart-mybatis</artifactId>
-     <version>2.0.2</version><!--version-->
+     <version>3.0.1</version><!--version-->
    </dependency>
    ```
 2. Configure database connection and Smart MyBatis in `application.yaml`:

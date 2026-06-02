@@ -208,24 +208,36 @@ public class DefaultSmartMapperInitializer implements SmartMapperInitializer {
                 continue;
             }
 
-            // 通过方法名判断, 只拦截insert 和 insertBatch
+            // 通过方法名判断, 只拦截insert 和 insertBatch/insertBatchSql
             String methodName = id.substring(id.lastIndexOf(".") + 1);
-            if (!"insert".equals(methodName) && !"insertBatch".equals(methodName)) {
+            if (!"insert".equals(methodName) && !"insertBatch".equals(methodName)
+                    && !"insertBatchSql".equals(methodName)) {
+                continue;
+            }
+            boolean supportsGeneratedKeys = SmartConfigHolder.getDialect()
+                    .supportsGeneratedKeys(methodName, mapperDeclaration);
+            boolean requiresCallableStatement = SmartConfigHolder.getDialect()
+                    .requiresCallableStatement(methodName, mapperDeclaration);
+            if (!supportsGeneratedKeys && !requiresCallableStatement) {
+                logger.debug("Skip generatedKeys patch for {} because current dialect does not support it.", id);
                 continue;
             }
             KeyGenerator keyGen = ms.getKeyGenerator();
             boolean needKeyGenPatch = (keyGen == null) || keyGen instanceof NoKeyGenerator;
             String[] keyProps = ms.getKeyProperties();
             boolean hasKeyProps = keyProps != null && keyProps.length > 0;
+            boolean needCallablePatch = requiresCallableStatement
+                    && ms.getStatementType() != StatementType.CALLABLE;
 
-            if (needKeyGenPatch && !hasKeyProps) {
+            if ((supportsGeneratedKeys && needKeyGenPatch && !hasKeyProps) || needCallablePatch) {
                 targets.add(ms);
             }
         }
 
         if (targets.isEmpty()) {
-            throw new IllegalStateException("No INSERT MappedStatement found for mapper "
-                    + mapperInterface.getName() + " that requires generatedKeys patch.");
+            logger.debug("No INSERT MappedStatement requires generatedKeys patch for mapper {}.",
+                    mapperInterface.getName());
+            return;
         }
 
         // 构造新的 MappedStatement 并替换
@@ -235,6 +247,10 @@ public class DefaultSmartMapperInitializer implements SmartMapperInitializer {
             String pkColumn = mapperDeclaration.getPkColumnName();
             String methodName = id.substring(id.lastIndexOf(".") + 1);
             String[] keyProperties = buildKeyPropertiesCandidates(pkProperty, methodName);
+            boolean supportsGeneratedKeys = SmartConfigHolder.getDialect()
+                    .supportsGeneratedKeys(methodName, mapperDeclaration);
+            boolean requiresCallableStatement = SmartConfigHolder.getDialect()
+                    .requiresCallableStatement(methodName, mapperDeclaration);
 
             // 构造 Builder(configuration, id, sqlSource, sqlCommandType)
             MappedStatement.Builder builder = new MappedStatement.Builder(
@@ -242,13 +258,23 @@ public class DefaultSmartMapperInitializer implements SmartMapperInitializer {
             );
 
             // 设置 keyGenerator / keyProperty / keyColumn
-            builder.keyGenerator(Jdbc3KeyGenerator.INSTANCE).keyProperty(String.join(",", keyProperties));
-            if (pkColumn != null && !pkColumn.isEmpty()) {
-                builder.keyColumn(pkColumn);
+            if (supportsGeneratedKeys) {
+                builder.keyGenerator(Jdbc3KeyGenerator.INSTANCE).keyProperty(String.join(",", keyProperties));
+                if (pkColumn != null && !pkColumn.isEmpty()) {
+                    builder.keyColumn(pkColumn);
+                }
+            } else {
+                builder.keyGenerator(ms.getKeyGenerator());
+                if (ms.getKeyProperties() != null && ms.getKeyProperties().length > 0) {
+                    builder.keyProperty(String.join(",", ms.getKeyProperties()));
+                }
+                if (ms.getKeyColumns() != null && ms.getKeyColumns().length > 0) {
+                    builder.keyColumn(String.join(",", ms.getKeyColumns()));
+                }
             }
             // 依次复制原属性
             builder.fetchSize(ms.getFetchSize())
-                    .statementType(ms.getStatementType())
+                    .statementType(requiresCallableStatement ? StatementType.CALLABLE : ms.getStatementType())
                     .parameterMap(ms.getParameterMap())
                     .databaseId(ms.getDatabaseId())
                     .timeout(ms.getTimeout())
@@ -266,8 +292,9 @@ public class DefaultSmartMapperInitializer implements SmartMapperInitializer {
             // 替换 Configuration.mappedStatements
             replaceMappedStatementReflective(configuration, id, newMs);
 
-            logger.debug("Enabled generatedKeys for {} keyProperty={} keyColumn={}",
-                    id, Arrays.toString(keyProperties), pkColumn);
+            logger.debug("Patched INSERT statement {} generatedKeys={} callable={} keyProperty={} keyColumn={}",
+                    id, supportsGeneratedKeys, requiresCallableStatement,
+                    Arrays.toString(supportsGeneratedKeys ? keyProperties : ms.getKeyProperties()), pkColumn);
         }
     }
 
@@ -422,7 +449,7 @@ public class DefaultSmartMapperInitializer implements SmartMapperInitializer {
             return new String[] {
                     "record." + prop,
             };
-        }else if ("insertBatch".equals(methodName)){
+        }else if ("insertBatch".equals(methodName) || "insertBatchSql".equals(methodName)){
             return new String[] {
                     "list." + prop,
             };

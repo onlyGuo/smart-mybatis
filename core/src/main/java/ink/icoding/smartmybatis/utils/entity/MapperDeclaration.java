@@ -32,8 +32,6 @@ public class MapperDeclaration {
 
     private String initScriptResourcePath;
 
-    private String baseInsertSql;
-
     public Class<? extends PO> getPoClass() {
         return poClass;
     }
@@ -103,47 +101,6 @@ public class MapperDeclaration {
 
     public void setPkAnnotation(TableField pkAnnotation) {
         this.pkAnnotation = pkAnnotation;
-    }
-
-    public String getBaseInsertSql() {
-        return baseInsertSql;
-    }
-
-    public void buildBaseSql(){
-        StringBuilder sql = new StringBuilder("INSERT INTO ");
-        sql.append("`").append(getTableName()).append("`");
-        sql.append(" (");
-        StringBuilder valuesPart = new StringBuilder(" VALUES (");
-        boolean first = true;
-        List<ColumnDeclaration> columnDeclarations = getColumnDeclarations();
-        for (ColumnDeclaration columnDeclaration : columnDeclarations) {
-            if (!first) {
-                sql.append(", ");
-                valuesPart.append(", ");
-            }
-            sql.append("`").append(columnDeclaration.getColumnName()).append("`");
-            if (columnDeclaration.isJson()){
-                valuesPart.append("#{record.").append(columnDeclaration.getFieldName())
-                        .append(", typeHandler=ink.icoding.smartmybatis.mapper.handlers.SmartJsonTypeHandler}");
-            }else{
-                valuesPart.append("#{record.").append(columnDeclaration.getFieldName()).append("}");
-            }
-
-            first = false;
-        }
-
-        if (getPkGenerateType() != PrimaryGenerateType.AUTO){
-            if (!first) {
-                sql.append(", ");
-                valuesPart.append(", ");
-            }
-            sql.append("`").append(getPkColumnName()).append("`");
-            valuesPart.append("#{record.").append(getPkName()).append("}");
-        }
-        sql.append(")");
-        valuesPart.append(")");
-        sql.append(valuesPart);
-        baseInsertSql = sql.toString();
     }
 
     @Override

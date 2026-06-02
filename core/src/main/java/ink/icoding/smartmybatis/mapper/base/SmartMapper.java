@@ -1,5 +1,6 @@
 package ink.icoding.smartmybatis.mapper.base;
 
+import ink.icoding.smartmybatis.conf.SmartConfigHolder;
 import ink.icoding.smartmybatis.entity.Page;
 import ink.icoding.smartmybatis.entity.PageResult;
 import ink.icoding.smartmybatis.entity.SmartTreeNode;
@@ -42,7 +43,27 @@ public interface SmartMapper<T extends PO> {
      * @return 受影响的行数
      */
     @InsertProvider(type = BaseSqlProvider.class, method = "insertBatch")
-    int insertBatch(@Param("list") Collection<T> records);
+    int insertBatchSql(@Param("list") Collection<T> records);
+
+    /**
+     * 批量插入记录
+     * @param records
+     *      记录集合
+     * @return 受影响的行数
+     */
+    default int insertBatch(@Param("list") Collection<T> records) {
+        if (!SmartConfigHolder.getDialect().usesBaseInsertForBatch()) {
+            return insertBatchSql(records);
+        }
+        if (records == null || records.isEmpty()) {
+            throw new IllegalArgumentException("The records collection for batch insert cannot be null or empty.");
+        }
+        int rows = 0;
+        for (T record : records) {
+            rows += insert(record);
+        }
+        return rows;
+    }
 
     /**
      * 查询所有记录
