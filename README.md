@@ -104,7 +104,7 @@ spring:
    <dependency>
      <groupId>ink.icoding</groupId>
      <artifactId>spring-boot-starter-smart-mybatis</artifactId>
-     <version>3.0.1</version><!--version-->
+     <version>3.0.2</version><!--version-->
    </dependency>
    ```
 2. 在`application.yaml`中配置数据库连接以及`smart mybatis`
@@ -266,7 +266,7 @@ spring:
    <dependency>
      <groupId>ink.icoding</groupId>
      <artifactId>spring-boot-starter-smart-mybatis</artifactId>
-     <version>3.0.1</version><!--version-->
+     <version>3.0.2</version><!--version-->
    </dependency>
    ```
 2. Configure database connection and Smart MyBatis in `application.yaml`:
