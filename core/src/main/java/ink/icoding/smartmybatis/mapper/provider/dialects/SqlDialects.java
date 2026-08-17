@@ -517,8 +517,11 @@ public interface SqlDialects {
             parentParamPrefix = "";
         }
         List<Expression<?>> expressions = where.getExpressions();
+        List<SortExpression<?>> sortExpressions = where.getSortExpressions();
         int limitSize = where.getLimitSize();
-        if ((null == expressions || expressions.isEmpty()) && limitSize == 0) {
+        if ((null == expressions || expressions.isEmpty())
+                && (null == sortExpressions || sortExpressions.isEmpty())
+                && limitSize == 0) {
             return "";
         }
 
@@ -668,9 +671,8 @@ public interface SqlDialects {
         }
 
         // ORDER BY
-        if (null != where.getSortExpressions() && !where.getSortExpressions().isEmpty()) {
+        if (null != sortExpressions && !sortExpressions.isEmpty()) {
             wherePart.append(" ORDER BY ");
-            List<SortExpression<?>> sortExpressions = where.getSortExpressions();
             for (int i = 0; i < sortExpressions.size(); i++) {
                 SortExpression<?> se = sortExpressions.get(i);
                 SFunction<? extends PO, ?> func = se.getFunc();
