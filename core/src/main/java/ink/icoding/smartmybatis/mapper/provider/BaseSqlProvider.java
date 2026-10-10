@@ -149,7 +149,12 @@ public class BaseSqlProvider {
                             "Primary key value must be provided for INPUT generate type, but it is null. at "
                                     + decl.getPoClass().getName());
                 }
-                // fall through: INPUT 不设置值，但保留原有 fall-through 行为
+                if (!SmartConfigHolder.config().isPreserveInputPrimaryKey()) {
+                    // 显式启用旧版兼容行为；不再依赖 switch fall-through。
+                    MapperUtil.setFieldValue(record, decl.getPkName(),
+                            UUID.randomUUID().toString().replace("-", ""));
+                }
+                break;
             case UUID:
                 MapperUtil.setFieldValue(record, decl.getPkName(),
                         UUID.randomUUID().toString().replace("-", ""));

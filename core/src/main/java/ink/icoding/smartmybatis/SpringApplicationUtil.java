@@ -12,10 +12,10 @@ import org.springframework.stereotype.Component;
 import java.lang.reflect.InvocationTargetException;
 
 /**
- * @Author: 郭胜凯
- * @Date: 2019-05-29 19:43
- * @Email 719348277@qq.com
- * @Description: Spring Boot 程序全局容器管理工具类
+ * Spring Boot 程序全局容器管理工具类。
+ * <p>创建时间：2019-05-29 19:43。
+ *
+ * @author 郭胜凯（719348277@qq.com）
  */
 @Component
 public class SpringApplicationUtil implements ApplicationContextAware {
