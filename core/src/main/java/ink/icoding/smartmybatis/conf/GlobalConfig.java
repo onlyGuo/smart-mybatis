@@ -17,6 +17,13 @@ public class GlobalConfig {
     private boolean autoSyncDb = false;
 
     /**
+     * 是否保留 INPUT 策略由调用方显式提供的主键，默认 true。
+     * 设为 false 时兼容 3.0.2 及之前将非空 INPUT 主键替换为 UUID 的行为。
+     * 仅影响 INPUT；其他主键策略保持不变，INPUT 主键为空时始终拒绝插入。
+     */
+    private boolean preserveInputPrimaryKey = true;
+
+    /**
      * 命名规范
      */
     private NamingConvention namingConvention = NamingConvention.UNDERLINE_UPPER;
@@ -49,6 +56,14 @@ public class GlobalConfig {
         this.autoSyncDb = autoSyncDb;
     }
 
+    public boolean isPreserveInputPrimaryKey() {
+        return preserveInputPrimaryKey;
+    }
+
+    public void setPreserveInputPrimaryKey(boolean preserveInputPrimaryKey) {
+        this.preserveInputPrimaryKey = preserveInputPrimaryKey;
+    }
+
     public NamingConvention getNamingConvention() {
         return namingConvention;
     }
@@ -78,6 +93,7 @@ public class GlobalConfig {
         return "GlobalConfig{" +
                 "enabled=" + enabled +
                 ", autoSyncDb=" + autoSyncDb +
+                ", preserveInputPrimaryKey=" + preserveInputPrimaryKey +
                 ", namingConvention=" + namingConvention +
                 ", tablePrefix='" + tablePrefix + '\'' +
                 ", dialectDriverClassName='" + dialectDriverClassName + '\'' +

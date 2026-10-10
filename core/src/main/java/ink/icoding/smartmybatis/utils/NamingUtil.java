@@ -60,7 +60,7 @@ public class NamingUtil {
     }
 
     /**
-     * @deprecated 请使用 {@link SmartConfigHolder#getDialect()#javaTypeToSql(Class, TableField)} 代替
+     * @deprecated 请使用 {@link ink.icoding.smartmybatis.mapper.provider.dialects.SqlDialects#javaTypeToSql(Class, TableField)} 代替
      */
     @Deprecated
     public static String javaTypeToSqlType(Class<?> type, TableField tableField) {

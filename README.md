@@ -104,7 +104,7 @@ spring:
    <dependency>
      <groupId>ink.icoding</groupId>
      <artifactId>spring-boot-starter-smart-mybatis</artifactId>
-     <version>3.0.2</version><!--version-->
+     <version>3.0.3</version><!--version-->
    </dependency>
    ```
 2. 在`application.yaml`中配置数据库连接以及`smart mybatis`
@@ -155,12 +155,28 @@ List<Student> students = studentMapper.select(
 | 配置键 | 说明 | 示例 |
 | --- | --- | --- |
 | `spring.mybatis.smart.enabled` | 是否启用 Smart MyBatis 功能 | `true` |
+| `spring.mybatis.smart.preserve-input-primary-key` | 保留 INPUT 策略显式主键；默认 true，false 兼容旧版替换为 UUID 的行为 | `true` |
 | `spring.mybatis.smart.auto-sync-db` | 自动将实体新增字段同步至表（仅新增、不删） | `true` |
 | `spring.mybatis.smart.naming-convention` | `underline_upper` / `underline_lower` / `as_is` | `underline_upper` |
 | `spring.mybatis.smart.table-prefix` | 统一的表前缀 | `sm_` |
 | `spring.mybatis.smart.dialect-driver-class-name` | 强制指定方言的 JDBC driver class | `com.mysql.cj.jdbc.Driver` |
 
 命名约定示例：实体 `StudentProfile` 在 `underline_upper + sm_` 模式下将映射为 `SM_STUDENT_PROFILE`，字段 `createdAt` 将生成为 `CREATED_AT` 列。
+
+### 3.0.3 主键修复与兼容开关
+
+`INPUT` 主键默认保留调用方提供的值，单条及批量插入均适用；主键为空时仍拒绝插入。
+该版本修复了旧版 INPUT 分支继续进入 UUID 分支的问题。依赖旧版替换行为的项目可以显式关闭开关：
+
+```yaml
+spring:
+  mybatis:
+    smart:
+      preserve-input-primary-key: false
+```
+
+默认值为 `true`，无需额外配置。关闭仅恢复旧版 INPUT 生成 UUID 的行为，不影响 AUTO、UUID、SNOWFLAKE 或 SNOWFLAKE_HEX 策略。
+非 Spring 环境使用 `GlobalConfig#setPreserveInputPrimaryKey(boolean)`。
 
 ## 常用命令
 - `mvn clean install`：编译全部模块并运行测试。
@@ -266,7 +282,7 @@ spring:
    <dependency>
      <groupId>ink.icoding</groupId>
      <artifactId>spring-boot-starter-smart-mybatis</artifactId>
-     <version>3.0.2</version><!--version-->
+     <version>3.0.3</version><!--version-->
    </dependency>
    ```
 2. Configure database connection and Smart MyBatis in `application.yaml`:
@@ -316,9 +332,16 @@ List<Student> students = studentMapper.select(
 | Property | Purpose | Example |
 | --- | --- | --- |
 | `spring.mybatis.smart.enabled` | Turns Smart MyBatis features on/off | `true` |
+| `spring.mybatis.smart.preserve-input-primary-key` | Preserve caller-supplied INPUT keys; false restores legacy UUID replacement | `true` |
 | `spring.mybatis.smart.auto-sync-db` | Adds new columns based on entity fields | `false` |
 | `spring.mybatis.smart.naming-convention` | `underline_upper`, `underline_lower`, `as_is` | `underline_upper` |
 | `spring.mybatis.smart.table-prefix` | Prefix prepended to inferred table names | `sm_` |
+
+### 3.0.3 INPUT key fix
+
+Caller-supplied INPUT keys are preserved by default for both single and batch inserts. Null INPUT keys still fail.
+Set `spring.mybatis.smart.preserve-input-primary-key=false` only to retain the legacy UUID replacement behavior.
+Other key strategies are unchanged. For plain Java configuration, use `GlobalConfig#setPreserveInputPrimaryKey(boolean)`.
 
 ### Commands
 - `mvn clean install` – build all modules.

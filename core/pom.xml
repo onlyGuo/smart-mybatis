@@ -4,7 +4,7 @@
     <parent>
         <groupId>ink.icoding</groupId>
         <artifactId>smart-mybatis</artifactId>
-        <version>3.0.2</version><!--version-->
+        <version>3.0.3</version><!--version-->
     </parent>
 
     <groupId>ink.icoding.smart-mybatis</groupId>
@@ -19,6 +19,11 @@
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
